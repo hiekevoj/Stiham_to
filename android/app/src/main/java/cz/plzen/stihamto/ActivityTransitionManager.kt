@@ -86,15 +86,19 @@ object ActivityTransitionManager {
         val request = ActivityTransitionRequest(transitions)
         val pendingIntent = getPendingIntent(context)
 
-        ActivityRecognition.getClient(context)
-            .requestActivityTransitionUpdates(request, pendingIntent)
-            .addOnSuccessListener {
-                isRegistered = true
-                Log.i(TAG, "Úspěšně registrovány systémové přechody aktivit (Activity Recognition)")
-            }
-            .addOnFailureListener { e ->
-                Log.e(TAG, "Chyba při registraci přechodů aktivit: ${e.message}")
-            }
+        try {
+            ActivityRecognition.getClient(context)
+                .requestActivityTransitionUpdates(request, pendingIntent)
+                .addOnSuccessListener {
+                    isRegistered = true
+                    Log.i(TAG, "Úspěšně registrovány systémové přechody aktivit (Activity Recognition)")
+                }
+                .addOnFailureListener { e ->
+                    Log.e(TAG, "Chyba při registraci přechodů aktivit: ${e.message}")
+                }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Chyba při volání requestActivityTransitionUpdates: ${e.message}")
+        }
     }
 
     @SuppressLint("MissingPermission")

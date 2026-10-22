@@ -34,15 +34,23 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.appcompat.app.AppCompatActivity() {
 
     private var searchJob: Job? = null
 
-    // Compose pozorovatelné stavy
+    // Compose pozorovatelné stavy (inicializované bezpečnými konstantami bez volání Contextu)
     private val liveResultState = mutableStateOf<LiveDeparturesResult?>(null)
     private val errorMessageState = mutableStateOf<String?>(null)
-    private val heroState = mutableStateOf(getHeroState())
-    private val hasMissingPermissionsState = mutableStateOf(checkMissingPermissions())
+    private val heroState = mutableStateOf(
+        HeroState(
+            isRunning = false,
+            isSleeping = false,
+            title = "Stíhám to? (Plzeň)",
+            subtitle = "Načítám stav sledování…",
+            actionText = "Spustit sledování"
+        )
+    )
+    private val hasMissingPermissionsState = mutableStateOf(false)
     private val selectedTractionState = mutableStateOf("all")
     private val isMultiStopState = mutableStateOf(true)
     private val pinnedCisState = mutableStateOf<Int?>(null)
@@ -66,7 +74,9 @@ class MainActivity : ComponentActivity() {
     private val wakeUpStepsState = mutableStateOf(30)
     private val postRideCooldownState = mutableStateOf(10)
     private val walkPassedLimitState = mutableStateOf(2)
-    private val systemDiagState = mutableStateOf(getSystemDiagState())
+    private val systemDiagState = mutableStateOf(
+        SystemDiagState(hasLoc = true, hasActivity = true, hasNotif = true, ignoringBatteryOpt = true)
+    )
 
     private val updateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -612,17 +622,21 @@ class MainActivity : ComponentActivity() {
         ) == PackageManager.PERMISSION_GRANTED
 
         if (hasLoc) {
-            val client = LocationServices.getFusedLocationProviderClient(this)
-            client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                .addOnSuccessListener { loc ->
-                    val lat = loc?.latitude ?: LiveDeparturesService.lastLat
-                    val lon = loc?.longitude ?: LiveDeparturesService.lastLon
-                    GeofenceManager.registerNearbyGeofences(this, lat, lon)
-                    loadDepartures(lat, lon)
-                }
-                .addOnFailureListener {
-                    loadDepartures(LiveDeparturesService.lastLat, LiveDeparturesService.lastLon)
-                }
+            try {
+                val client = LocationServices.getFusedLocationProviderClient(this)
+                client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                    .addOnSuccessListener { loc ->
+                        val lat = loc?.latitude ?: LiveDeparturesService.lastLat
+                        val lon = loc?.longitude ?: LiveDeparturesService.lastLon
+                        GeofenceManager.registerNearbyGeofences(this, lat, lon)
+                        loadDepartures(lat, lon)
+                    }
+                    .addOnFailureListener {
+                        loadDepartures(LiveDeparturesService.lastLat, LiveDeparturesService.lastLon)
+                    }
+            } catch (_: Throwable) {
+                loadDepartures(LiveDeparturesService.lastLat, LiveDeparturesService.lastLon)
+            }
         } else {
             loadDepartures(LiveDeparturesService.lastLat, LiveDeparturesService.lastLon)
         }
