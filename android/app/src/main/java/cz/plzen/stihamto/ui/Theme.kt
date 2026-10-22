@@ -14,11 +14,11 @@ enum class AppThemeMode(val title: String) {
 }
 
 enum class AppColorTheme(val title: String, val subtitle: String, val primaryColor: Color) {
-    BOTANICAL("Plzeňská zeleň", "Originální šalvěj a les", Color(0xFF2C4C38)),
+    BOTANICAL("Smaragd", "Originální šalvěj a les", Color(0xFF2C4C38)),
     DYNAMIC("Material You", "Dynamicky dle tapety (Android 12+)", Color(0xFF3F826D)),
-    PILSNER("Plzeňský ležák", "Zlatavý jantar a slad", Color(0xFFA06200)),
+    PILSNER("Jantar", "Zlatavý jantar a med", Color(0xFFA06200)),
     TRAM_NIGHT("Noční linka", "Hluboké indigo a azur", Color(0xFF0F5B80)),
-    RUBY("Borský rubín", "Karmín a teplé odstíny", Color(0xFF8B1E3F))
+    RUBY("Rubín", "Karmín a teplé odstíny", Color(0xFF8B1E3F))
 }
 
 // === 1. BOTANICAL PALETTE ===

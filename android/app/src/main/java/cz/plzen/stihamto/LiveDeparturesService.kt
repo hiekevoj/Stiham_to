@@ -55,12 +55,15 @@ class LiveDeparturesService : Service(), SensorEventListener {
 
         const val BROADCAST_LIVE_UPDATE = "cz.plzen.stihamto.BROADCAST_LIVE_UPDATE"
 
-        // 1. Timeout mimo zastávku (> 40 m), pokud se GPS neposune o aspoň 40 m: 2,5 minuty (150 s)
-        //    (řeší chůzi po obchodě, kanceláři nebo bytě na jednom místě)
-        private const val IDLE_TIMEOUT_AWAY_MS = 150_000L
+        // Perimetr pro vyčkávání na spoj u zastávky (včetně odchylek městské GPS a rozlehlých nástupišť): 140 m
+        private const val STOP_WAITING_RADIUS_METERS = 140
 
-        // 2. Timeout čekání přímo u sloupku zastávky (<= 40 m): 5 minut (300 s)
-        private const val IDLE_TIMEOUT_AT_STOP_MS = 300_000L
+        // 1. Timeout mimo dosah zastávky (> 140 m), pokud se GPS neposune o aspoň 40 m: 3 minuty (180 s)
+        //    (řeší chůzi po obchodě, kanceláři nebo bytě na jednom místě)
+        private const val IDLE_TIMEOUT_AWAY_MS = 180_000L
+
+        // 2. Timeout čekání v perimetru zastávky (<= 140 m): 8 minut (480 s)
+        private const val IDLE_TIMEOUT_AT_STOP_MS = 480_000L
 
         // 3. Ochranná pauza po jízdě tramvají/busem (> 22 km/h): 20 minut
         //    (aby se po vystoupení z MHD a cestě do práce notifikace hned znovu nezapínala)
@@ -389,7 +392,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
                 title = "Hledám nejbližší zastávku…",
                 shortLine = "Počítám pěší trasu a odjezdy",
                 subStatus = "Živě",
-                expandedLines = listOf("Počítám pěší trasu a načítám odjezdy PMDP…")
+                expandedLines = listOf("Počítám pěší trasu a načítám odjezdy…")
             )
         }
         startForegroundSafely(earlyNotif)
@@ -430,16 +433,16 @@ class LiveDeparturesService : Service(), SensorEventListener {
             }
             ACTION_STILL_DETECTED -> {
                 val now = System.currentTimeMillis()
-                val dist = latestResult?.primaryStop?.distanceMeters ?: 100
-                // Pokud stojíme u zastávky (<= 45 m), čekáme na tramvaj! Neuspat!
-                if (dist <= 45) {
+                val dist = latestResult?.primaryStop?.distanceMeters ?: 500
+                // Pokud stojíme v perimetru zastávky (<= 140 m), čekáme na tramvaj/autobus! Neuspat do budovy!
+                if (dist <= STOP_WAITING_RADIUS_METERS) {
                     return START_STICKY
                 }
                 if (PmdpRepository.isSleepOnWifiEnabled(this) && SmartTriggerMonitor.isConnectedToWifi(this) && !isManualForceOnWifi) {
                     releaseWalkingWakeLock()
                     clearIndoorCooldown()
                     enterStandbySleep("Doma na Wi-Fi (probudí se při odchodu)")
-                } else if (!isManualForceOnWifi && (now - sessionActivatedAtMs) > 120_000L) {
+                } else if (!isManualForceOnWifi && (now - sessionActivatedAtMs) > 180_000L) {
                     releaseWalkingWakeLock()
                     setIndoorCooldown(now + 10 * 60 * 1000L, StandbyCooldownCause.INDOOR_IDLE)
                     enterStandbySleep("V budově na místě (klid ještě 10 min)")
@@ -567,7 +570,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
             title = "Hledám nejbližší zastávku…",
             shortLine = "Počítám pěší trasu a odjezdy",
             subStatus = "Živě",
-            expandedLines = listOf("Počítám pěší trasu a načítám odjezdy PMDP…")
+            expandedLines = listOf("Počítám pěší trasu a načítám odjezdy…")
         )
 
         startForegroundSafely(initialNotif)
@@ -1183,18 +1186,19 @@ class LiveDeparturesService : Service(), SensorEventListener {
         }
 
         // 3. Kontrola posunu GPS:
-        //    - Mimo zastávku (> 40 m): pokud se GPS neposunula o >= 40 m za 2,5 minuty (obchod, byt, kancelář)
-        //    - Přímo u sloupku zastávky (<= 40 m): po 5 minutách čekání
+        //    - Mimo dosah zastávky (> 140 m): pokud se GPS neposunula o >= 40 m za 3 minuty (obchod, byt, kancelář)
+        //    - V perimetru zastávky (<= 140 m): po 8 minutách čekání na zastávce
         val timeWithoutGpsProgressMs = now - lastGpsProgressTimestampMs
-        val timeoutLimitMs = if (nearestDist <= 40) IDLE_TIMEOUT_AT_STOP_MS else IDLE_TIMEOUT_AWAY_MS
+        val isAtStopArea = nearestDist <= STOP_WAITING_RADIUS_METERS
+        val timeoutLimitMs = if (isAtStopArea) IDLE_TIMEOUT_AT_STOP_MS else IDLE_TIMEOUT_AWAY_MS
 
         if (timeWithoutGpsProgressMs >= timeoutLimitMs) {
             PmdpRepository.saveAutoSleptLocation(this, lastLat, lastLon)
-            return if (nearestDist <= 40) {
-                setIndoorCooldown(now + 5 * 60 * 1000L, StandbyCooldownCause.STOP_IDLE)
-                "Čekání na zastávce (klid ještě 5 min)"
+            return if (isAtStopArea) {
+                setIndoorCooldown(now + 6 * 60 * 1000L, StandbyCooldownCause.STOP_IDLE)
+                "Čekání na zastávce (klid ještě 6 min)"
             } else {
-                // V obchodě nebo budově nastavíme 12min klid, aby chození mezi regály službu hned neprobouzelo
+                // V obchodě nebo budově mimo zastávky nastavíme 12min klid
                 setIndoorCooldown(now + INDOOR_SHOP_COOLDOWN_MS, StandbyCooldownCause.INDOOR_IDLE)
                 "V budově na místě (klid ještě 12 min)"
             }
@@ -1220,7 +1224,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
 
         val nearestDist = res.primaryStop.distanceMeters
         val subStatus = if (nearestDist > 18_000) {
-            "Mimo dosah PMDP Plzeň"
+            "Mimo dosah spojů"
         } else if (nearestDist <= 40) {
             "U zastávky"
         } else {
@@ -1303,7 +1307,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
         } catch (e: Exception) {
             if (!isSleepingStandby && latestResult == null) {
                 val notif = buildNotification(
-                    title = "Připojuji se k PMDP…",
+                    title = "Načítám odjezdy…",
                     shortLine = "Čekám na internet (obnovím za 3 s)",
                     subStatus = "Spojení",
                     expandedLines = listOf("Přepínání sítě, za okamžik načtu odjezdy…")
@@ -1439,7 +1443,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
                 "Živé odjezdy MHD na zamykací obrazovce",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Ukazuje živé odjezdy PMDP při chůzi a přiblížení k zastávce"
+                description = "Ukazuje živé odjezdy spojů při chůzi a přiblížení k zastávce"
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 setShowBadge(false)
             }

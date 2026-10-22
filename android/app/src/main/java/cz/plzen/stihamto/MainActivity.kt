@@ -14,11 +14,15 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -53,7 +57,7 @@ class MainActivity : AppCompatActivity() {
         HeroState(
             isRunning = false,
             isSleeping = false,
-            title = "Stíhám to? (Plzeň)",
+            title = "Stíhám to?",
             subtitle = "Načítám stav sledování…",
             actionText = "Spustit sledování"
         )
@@ -71,7 +75,7 @@ class MainActivity : AppCompatActivity() {
     private val crosswalkBufferState = mutableStateOf(30)
     private val hideMissedState = mutableStateOf(true)
     private val notifCountState = mutableStateOf(4)
-    private val clusterRadiusState = mutableStateOf(380)
+    private val clusterRadiusState = mutableStateOf(400)
     private val autoTramState = mutableStateOf(true)
     private val favoriteLinesState = mutableStateOf<Set<String>>(emptySet())
     private val allKnownLinesState = mutableStateOf<List<String>>(emptyList())
@@ -117,6 +121,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         CrashHandler.init(this)
         PmdpRepository.syncRuntimeSettings(this)
@@ -202,9 +207,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     @Composable
     private fun MainAppScaffold() {
-        var activeTab by remember { mutableStateOf(0) }
+        val pagerState = rememberPagerState(pageCount = { 2 })
+        val coroutineScope = rememberCoroutineScope()
 
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -214,8 +221,12 @@ class MainActivity : AppCompatActivity() {
                     tonalElevation = 4.dp
                 ) {
                     NavigationBarItem(
-                        selected = activeTab == 0,
-                        onClick = { activeTab = 0 },
+                        selected = pagerState.currentPage == 0,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(0)
+                            }
+                        },
                         icon = {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_home),
@@ -231,8 +242,12 @@ class MainActivity : AppCompatActivity() {
                         )
                     )
                     NavigationBarItem(
-                        selected = activeTab == 1,
-                        onClick = { activeTab = 1 },
+                        selected = pagerState.currentPage == 1,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(1)
+                            }
+                        },
                         icon = {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_settings),
@@ -250,8 +265,18 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         ) { innerPadding ->
-            Box(modifier = Modifier.padding(innerPadding)) {
-                if (activeTab == 0) {
+            val screenPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = innerPadding.calculateTopPadding() + 8.dp,
+                bottom = innerPadding.calculateBottomPadding() + 16.dp
+            )
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                if (page == 0) {
                     HomeScreen(
                         result = liveResultState.value,
                         heroState = heroState.value,
@@ -307,13 +332,14 @@ class MainActivity : AppCompatActivity() {
                         },
                         onRetry = {
                             fetchWithCurrentGps()
-                        }
+                        },
+                        contentPadding = screenPadding
                     )
                 } else {
                     val vName = try {
                         packageManager.getPackageInfo(packageName, 0).versionName
                     } catch (_: Exception) {
-                        "0.0.15"
+                        "0.1.0"
                     }
 
                     SettingsScreen(
@@ -424,7 +450,8 @@ class MainActivity : AppCompatActivity() {
                                 Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
                             }
                         },
-                        appVersion = vName
+                        appVersion = vName ?: "0.1.0",
+                        contentPadding = screenPadding
                     )
                 }
             }
@@ -769,14 +796,26 @@ class MainActivity : AppCompatActivity() {
                     data = Uri.parse("package:$packageName")
                 }
                 startActivity(intent)
-            } catch (_: Throwable) {
-                try {
-                    val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.parse("package:$packageName")
-                    }
-                    startActivity(fallback)
-                } catch (_: Throwable) {
+                return
+            } catch (t: Throwable) {
+                android.util.Log.w("MainActivity", "ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: ${t.message}")
+            }
+
+            try {
+                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                startActivity(intent)
+                return
+            } catch (t: Throwable) {
+                android.util.Log.w("MainActivity", "ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS: ${t.message}")
+            }
+
+            try {
+                val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
                 }
+                startActivity(fallback)
+            } catch (_: Throwable) {
+                Toast.makeText(this, "Nastavení -> Aplikace -> Baterie -> Bez omezení", Toast.LENGTH_SHORT).show()
             }
         }
     }

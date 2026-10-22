@@ -21,6 +21,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cz.plzen.stihamto.LiveDeparture
@@ -58,7 +59,8 @@ fun HomeScreen(
     onSelectStop: (Int) -> Unit,
     onSelectAllNearby: () -> Unit,
     onToggleFavoriteLine: (String) -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    contentPadding: PaddingValues = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 32.dp)
 ) {
     val validDeps = remember(result) {
         if (result == null) emptyList()
@@ -75,7 +77,7 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 32.dp),
+        contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // 1. Editorial Header
@@ -233,7 +235,7 @@ private fun HomeTopBar(onGpsClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "PLZEŇ  ·  MHD V OKOLÍ",
+                text = "ŽIVÉ ODJEZDY V OKOLÍ",
                 fontSize = 10.sp,
                 letterSpacing = 1.4.sp,
                 fontWeight = FontWeight.Medium,
@@ -261,24 +263,39 @@ private fun HomeTopBar(onGpsClick: () -> Unit) {
 @Composable
 private fun PermissionWarningCard(onRequestPermissions: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF945D14))
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable { onRequestPermissions() },
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onRequestPermissions() }
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Povolit polohu, krokoměr a notifikace",
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
+            Icon(
+                painter = painterResource(id = R.drawable.ic_gps),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(22.dp)
             )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Chybí systémová oprávnění",
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Klepnutím povolte polohu, krokoměr a notifikace",
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                    fontSize = 11.5.sp
+                )
+            }
         }
     }
 }
@@ -491,7 +508,7 @@ private fun SearchStopsBlock(
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            placeholder = { Text("Najít zastávku v Plzni…", fontSize = 14.sp) },
+            placeholder = { Text("Najít zastávku…", fontSize = 14.sp) },
             leadingIcon = {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_search),
@@ -502,7 +519,12 @@ private fun SearchStopsBlock(
             trailingIcon = {
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { onQueryChange("") }) {
-                        Text("✕", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_search),
+                            contentDescription = "Vymazat",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             },
@@ -601,13 +623,13 @@ private fun StopHeader(result: LiveDeparturesResult?, errorMessage: String?) {
         if (result != null) {
             val isFarAway = result.primaryStop.distanceMeters > 18_000
             val title = when {
-                isFarAway -> "Mimo dosah PMDP Plzeň"
+                isFarAway -> "Mimo dosah spojů"
                 result.clusterStops.size > 1 -> result.clusterStops.joinToString(" + ") { it.stop.name }
                 else -> result.primaryStop.stop.name
             }
 
             val meta = if (isFarAway) {
-                "Aplikace je určena pro Plzeň (nejbližší: ${result.primaryStop.stop.name}, ${result.primaryStop.distanceMeters / 1000} km)"
+                "Mimo pokrytí zastávek (nejbližší: ${result.primaryStop.stop.name}, ${result.primaryStop.distanceMeters / 1000} km)"
             } else {
                 val stopsMeta = result.clusterStops.joinToString("  ·  ") {
                     "${it.stop.name}: ${it.distanceMeters} m (${it.walkingMinutes} min chůze)"
@@ -691,19 +713,35 @@ private fun DepartureCard(
                     .clickable { onToggleFavorite() },
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Text(
                         text = departure.lineName,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = badgeFg
+                        color = badgeFg,
+                        lineHeight = 18.sp,
+                        style = androidx.compose.ui.text.TextStyle(
+                            platformStyle = @Suppress("DEPRECATION") androidx.compose.ui.text.PlatformTextStyle(
+                                includeFontPadding = false
+                            )
+                        )
                     )
+                    Spacer(modifier = Modifier.height(1.dp))
                     Text(
                         text = typeLabel,
-                        fontSize = 8.sp,
+                        fontSize = 8.5.sp,
                         letterSpacing = 0.8.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = badgeFg
+                        fontWeight = FontWeight.SemiBold,
+                        color = badgeFg,
+                        lineHeight = 9.sp,
+                        style = androidx.compose.ui.text.TextStyle(
+                            platformStyle = @Suppress("DEPRECATION") androidx.compose.ui.text.PlatformTextStyle(
+                                includeFontPadding = false
+                            )
+                        )
                     )
                 }
             }
@@ -717,7 +755,8 @@ private fun DepartureCard(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
+                    maxLines = 2,
+                    lineHeight = 19.sp,
                     overflow = TextOverflow.Ellipsis
                 )
 
@@ -726,12 +765,31 @@ private fun DepartureCard(
                     departure.delayMin == 0 -> "včas"
                     else -> "+${departure.delayMin} min"
                 }
+                val delayColor = when {
+                    departure.delayMin == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                    departure.delayMin == 0 -> Color(0xFF2E7D32)
+                    departure.delayMin > 2 -> Color(0xFFC62828)
+                    else -> Color(0xFFE65100)
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
-                    text = "${departure.stopName} (${departure.stopDistanceMeters} m)  ·  $delayPart",
+                    text = androidx.compose.ui.text.buildAnnotatedString {
+                        append("${departure.stopName} (${departure.stopDistanceMeters} m)  ·  ")
+                        pushStyle(
+                            androidx.compose.ui.text.SpanStyle(
+                                color = delayColor,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        )
+                        append(delayPart)
+                        pop()
+                    },
                     fontSize = 12.sp,
+                    lineHeight = 16.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
 
@@ -762,7 +820,7 @@ private fun DepartureCard(
                                 .padding(horizontal = 9.dp, vertical = 3.dp)
                         ) {
                             Text(
-                                text = "★ Prioritní",
+                                text = "Prioritní",
                                 color = MaterialTheme.colorScheme.primary,
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Medium

@@ -1,87 +1,89 @@
-# ⚡ Stíhám to? (PMDP Plzeň)
+# Stíhám to?
 
-> **Inteligentní asistent pro MHD v Plzni** • Přímý live konektor PMDP, chytré slučování zastávek v uzlech, výpočet stihnutelnosti spojů podle vaší chůze, automatické spouštění po odchodu z domova a zamykací obrazovka Androidu v reálném čase.
+> Inteligentní asistent pro městskou hromadnou dopravu. Proaktivní vyhodnocení odjezdů v reálném čase, dynamické shlukování zastávek v uzlech, výpočet stihnutelnosti spojů podle tempa chůze, automatická aktivace při odchodu a průběžný přehled přímo na zamykací obrazovce.
 
 [![Platform](https://img.shields.io/badge/Platform-Android-brightgreen.svg)]()
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.24-blue.svg)]()
-[![PMDP](https://img.shields.io/badge/Data-PMDP%20Plzeň%20Live-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.1.0-blue.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)]()
 
 ---
 
-## 🎯 O projektu
+## Hlavní funkce
 
-Aplikace **Stíhám to?** řeší každodenní problém cestujících v Plzni: *„Když vyrazím ze dveří nebo z kanceláře, stihnu nejbližší tramvaj nebo trolejbus?“*
+Aplikace **Stíhám to?** proaktivně řeší každodenní otázku cestujících: *„Když vyrazím ze dveří nebo z kanceláře, stihnu nejbližší spoj?“*
 
-Běžné aplikace zobrazují tabule jednotlivých sloupků nebo vyžadují zdlouhavé vyhledávání. **Stíhám to?** funguje proaktivně:
-1. **Chytrý uzel (Smart Clustering):** V místech jako *Sady Pětatřicátníků*, *CAN*, *U Práce* nebo *Hlavní nádraží* automaticky sloučí všechny zastávky v okruhu do jednoho přehledu a prioritizuje páteřní trakci (tramvaje).
-2. **Kalkulace stihnutelnosti:** Vypočítává přesnou pěší vzdálenost k označníku a porovnává ji s reálným zpožděním vozu. Okamžitě víte, zda spoj **stíháte v klidu**, **je potřeba zrychlit do kroku**, **musíte běžet**, nebo už **nemá smysl spěchat**.
-3. **Automatické probuzení (Smart Trigger):** Detekuje odchod z domova (odpojení od domácí Wi-Fi + rozpoznání chůze přes Activity Recognition) a automaticky zobrazí živou notifikaci na zamykací obrazovce.
-4. **Jetpack Compose & Material 3:** Moderní deklarativní UI s podporou dynamického přebarvování podle tapety (Material You na Androidu 12+) i plnohodnotným Dark Mode.
-5. **Přímé aktualizace z GitHubu (In-App Updater):** Aplikace umí v Nastavení přímo zkontrolovat novou verzi na GitHubu, stáhnout APK s podporou redirectů a spustit aktualizaci bez nutnosti Google Play Store.
-6. **Android Live Notifikace na zamykací obrazovce:** Připnutá notifikace s interaktivními tlačítky pro filtr trakce a okamžité probuzení/uspání.
-7. **Nulová závislost na externích placených mapách:** Kalibrovaný offline pěší model pro Plzeň namísto nestabilních veřejných routerů.
+Běžné jízdní řády vyžadují zdlouhavé vyhledávání a přepínání jednotlivých sloupků. **Stíhám to?** přistupuje k informacím kontextově:
+
+1. **Chytrý uzel (Smart Clustering):** V rozsáhlých přestupních uzlech automaticky sloučí všechny okolní zastávky v nastaveném dosahu (300, 400 nebo 500 m) do jednotného přehledu se zvýrazněním páteřní dopravy.
+2. **Kalkulace stihnutelnosti:** Vypočítává přesnou pěší docházkovou vzdálenost k označníku a porovnává ji s reálným zpožděním vozu. Okamžitě víte, zda spoj **stíháte s rezervou**, **je potřeba zrychlit krok**, **musíte běžet**, nebo už spoj odjel.
+3. **Automatická aktivace a správa energie:** Rozpoznává odchod z klidové Wi-Fi sítě a souvislou chůzi pomocí senzorů pohybu (Google Activity Recognition). Při pobytu na zastávce udržuje spojení a spolehlivě rozlišuje čekání na spoj od pobytu v budově.
+4. **Nativní Android notifikace:** Připnutá notifikace na zamykací obrazovce s interaktivními filtry trakcí a okamžitým ovládáním.
+5. **Moderní rozhraní Material 3:** Plné Edge-to-Edge zobrazení bez rušivých pruhů, transparentní systémové lišty, podpora systémového Dark Mode i dynamického barvení Material You.
+6. **Přirozená gesta a navigace:** Plynulé přepínání mezi obrazovkami Domů a Nastavení pomocí horizontálního tažení (swipe) i spodní navigační lišty.
+7. **Interní správa aktualizací:** Schopnost přímo v nastavení ověřit novou verzi, stáhnout instalační balíček a spustit aktualizaci.
 
 ---
 
-## 📱 Struktura projektu
+## Struktura projektu
 
 ```text
 Stiham_to/
-├── android/                         # Nativní aplikace pro Android (Kotlin)
+├── android/                         # Nativní aplikace pro Android (Kotlin, Jetpack Compose)
 │   ├── app/src/main/java/cz/plzen/stihamto/
-│   │   ├── MainActivity.kt          # Hlavní UI, nastavení domácích Wi-Fi, diagnostika
-│   │   ├── LiveDeparturesService.kt # Foreground služba s notifikací a pedometrem
-│   │   ├── PmdpRepository.kt        # Komunikace s PMDP API, offline výpočty, cache
-│   │   ├── SmartTriggerMonitor.kt   # Wi-Fi monitor & Activity Recognition trigger
+│   │   ├── MainActivity.kt          # Hlavní aktivita, navigace, správa stavu
+│   │   ├── LiveDeparturesService.kt # Popředová služba, notifikace na pozadí, senzory
+│   │   ├── PmdpRepository.kt        # Datový konektor, algoritmy stihnutelnosti, offline cache
+│   │   ├── SmartTriggerMonitor.kt   # Sledování síťových stavů a pohybových aktivit
 │   │   ├── ActivityTransitionManager.kt
-│   │   ├── AppUpdateManager.kt      # In-App aktualizace z GitHub Releases & version.json
-│   │   └── GeofenceManager.kt       # Geofencing kolem vybraných uzlů
-│   ├── app/src/main/res/            # Ikony, vektory linek, motivy
-│   └── build-apk.sh                 # Automatizovaný build skript pro sestavení APK
+│   │   ├── AppUpdateManager.kt      # Modul pro ověřování a instalaci aktualizací
+│   │   └── ui/                      # Jetpack Compose komponenty a témata
+│   ├── app/src/main/res/            # Vektorové ikony, systémové resources, styly
+│   └── build-apk.sh                 # Sestavovací skript
 ├── data/
-│   └── stops.json                   # Kompletní offline databáze všech 328+ zastávek PMDP
-├── StihamTo-Plzen.apk               # Zkompilovaný balíček APK připravený k instalaci
-└── version.json                     # Metadata verzí pro GitHub In-App Updater
+│   └── stops.json                   # Offline databáze zastávek
+├── StihamTo-Plzen.apk               # Instalační balíček APK
+└── version.json                     # Metadata verzí pro interní aktualizace
 ```
 
 ---
 
-## 🚀 Jak začít
+## Instalace a spuštění
 
-### 1. Stažení a instalace Android APK
+### 1. Stažení předpřipraveného balíčku
 
-Předpřipravený instalační balíček najdete přímo v kořenu repozitáře:
+Instalační soubor je dostupný přímo v repozitáři:
 - **[StihamTo-Plzen.apk](StihamTo-Plzen.apk)**
 
-**Instalace do telefonu přes ADB:**
+**Instalace přes ADB:**
 ```bash
 adb install -r StihamTo-Plzen.apk
 ```
-*Nebo soubor jednoduše stáhněte do telefonu a povolte instalaci z neznámých zdrojů.*
+Nebo soubor stáhněte do mobilního zařízení a povolte instalaci aplikací z neznámých zdrojů.
 
 ---
 
-### 2. Kompilace Android aplikace ze zdrojových kódů
+### 2. Sestavení ze zdrojových kódů
 
-Projekt obsahuje skript pro sestavení pomocí Gradle:
+Projekt využívá Gradle s Kotlin DSL. Pro sestavení je připraven automatizovaný skript:
 
 ```bash
-# Sestavení debug APK
 ./android/build-apk.sh
 ```
 
-Výsledné APK se automaticky uloží do `StihamTo-Plzen.apk`.
+Sestavený balíček APK se automaticky vyexportuje do kořenového adresáře jako `StihamTo-Plzen.apk`.
 
 ---
 
-## 🛠️ Použité technologie
+## Použité technologie
 
-- **Android:** Kotlin, Android Jetpack Compose, Material 3, Coroutines & Flow, Google Play Services (Location & Activity Recognition).
-- **Data:** PMDP (Plzeňské městské dopravní podniky) live feed & GTFS zastávky.
+- **Platforma:** Android (minSdk 26, targetSdk 34)
+- **Jazyk a framework:** Kotlin 1.9.24, Jetpack Compose (BOM 2024.06.00), Material 3
+- **Asynchronní operace:** Kotlin Coroutines & Flow
+- **Systémové služby:** Google Play Services (Fused Location Provider, Activity Recognition), Android PowerManager & Foreground Service
 
 ---
 
-## 📄 Licence
+## Licence
 
-Tento projekt je open-source pod licencí MIT.
+Projekt je publikován pod licencí MIT.

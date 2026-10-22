@@ -1,8 +1,8 @@
 {
-  "versionCode": 15,
-  "versionName": "0.0.15",
+  "versionCode": 16,
+  "versionName": "0.1.0",
   "releaseDate": "2026-10-22",
   "apkUrl": "https://raw.githubusercontent.com/hiekevoj/Stiham_to/main/StihamTo-Plzen.apk",
   "fallbackApkUrl": "https://github.com/hiekevoj/Stiham_to/raw/main/StihamTo-Plzen.apk",
-  "releaseNotes": "• Oprava detekce a stahování aktualizací z GitHubu\n• Odstranění webového simulátoru a widgetu\n• Oprava oprávnění a pádů na Androidu 14\n• Spolehlivější detekce Wi-Fi na Androidu 12+\n• Vylepšený výpočet vzdálenosti na uzlech a oprava odpočtu zpoždění"
+  "releaseNotes": "• Verze 0.1.0: kompletní redesign a optimalizace rozhraní\n• Edge-to-Edge zobrazení bez černých pruhů s podporou gest a transparentních systémových lišt\n• Plynulá horizontální gesta a animované přechody mezi Domů a Nastavení\n• Kompaktní výběr barevných témat v jednom řádku a skrytí neaktivních sekcí Wi-Fi\n• Odstranění emoji pro čistý a profesionální vzhled\n• Oprava falešného uspávání u zastávek a optimalizace perimetru na 140 m\n• Podpora zaokrouhlených dosahů Chytrého uzlu (300, 400, 500 m)\n• Oprava systémového dialogu pro ignorování optimalizace baterie na pozadí"
 }

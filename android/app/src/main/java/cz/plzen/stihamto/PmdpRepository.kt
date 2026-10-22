@@ -167,7 +167,7 @@ object PmdpRepository {
 
     fun getClusterRadiusMeters(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt("cluster_radius_m", 380)
+        return prefs.getInt("cluster_radius_m", 400)
     }
 
     fun setClusterRadiusMeters(context: Context, meters: Int) {
@@ -720,7 +720,7 @@ object PmdpRepository {
             if (!isRetry && (code == 400 || code == 401 || code == 403 || code == 500)) {
                 return postStopDeparturesJson(stop, maxResults, true)
             }
-            throw IllegalStateException("PMDP server vrátil HTTP $code")
+            throw IllegalStateException("Server vrátil HTTP $code")
         }
 
         val responseBody = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
@@ -751,9 +751,9 @@ object PmdpRepository {
             }
             val isNight = lineObj?.optBoolean("IsNightConnection", false) ?: upperLine.startsWith("N")
             val icon = when (tractionType) {
-                1 -> "🚋"
-                2 -> "🚎"
-                else -> "🚌"
+                1 -> "TRAM"
+                2 -> "TROL"
+                else -> "BUS"
             }
 
             val depTime = item.optString("DepartureTime", "")

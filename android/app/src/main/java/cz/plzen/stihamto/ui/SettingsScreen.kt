@@ -78,7 +78,8 @@ fun SettingsScreen(
     onCheckForUpdates: () -> Unit,
     onDownloadAndInstall: (UpdateCheckResult) -> Unit,
     onInstallDownloaded: (File) -> Unit,
-    appVersion: String
+    appVersion: String,
+    contentPadding: PaddingValues = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 44.dp)
 ) {
     var favPickerExpanded by remember { mutableStateOf(false) }
 
@@ -86,7 +87,7 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 44.dp),
+        contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Hlavička
@@ -113,7 +114,7 @@ fun SettingsScreen(
         // 1. SEKCE: VZHLED A BAREVNÝ STYL
         // ==========================================
         item {
-            SettingsCategoryCard(title = "🎨  Vzhled a téma") {
+            SettingsCategoryCard(title = "Vzhled a téma") {
                 // Přepínač Světlý / Tmavý / Systém
                 Text(
                     text = "Režim zobrazení",
@@ -153,14 +154,14 @@ fun SettingsScreen(
 
                 SettingsDivider()
 
-                // Výběr barevné palety
+                // Výběr barevné palety (všechny barvy v jednom řádku bez popisků)
                 Text(
                     text = "Barevný styl aplikace",
                     fontSize = 14.5.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 val availableThemes = remember {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -170,48 +171,44 @@ fun SettingsScreen(
                     }
                 }
 
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     availableThemes.forEach { item ->
                         val isSelected = colorTheme == item
-                        Row(
+                        val ringColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .border(2.5.dp, ringColor, CircleShape)
+                                .padding(4.dp)
+                                .clip(CircleShape)
                                 .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                    else Color.Transparent
+                                    if (item == AppColorTheme.DYNAMIC) MaterialTheme.colorScheme.primary
+                                    else item.primaryColor
                                 )
-                                .clickable { onColorThemeChange(item) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .clickable { onColorThemeChange(item) },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .clip(CircleShape)
-                                    .background(item.primaryColor)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = item.title,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                    else MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = item.subtitle,
-                                    fontSize = 11.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                             if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White)
+                                )
+                            } else if (item == AppColorTheme.DYNAMIC) {
                                 Text(
-                                    text = "✓",
-                                    fontSize = 14.sp,
+                                    text = "auto",
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = Color.White.copy(alpha = 0.9f)
                                 )
                             }
                         }
@@ -224,7 +221,7 @@ fun SettingsScreen(
         // 2. SEKCE: CHŮZE A VÝPOČET SPOJŮ
         // ==========================================
         item {
-            SettingsCategoryCard(title = "🚶  Chůze a vyhodnocení spojů") {
+            SettingsCategoryCard(title = "Chůze a vyhodnocení spojů") {
                 SegmentedSettingRow(
                     title = "Tempo chůze",
                     subtitle = "Rychlost pro výpočet docházkové doby k označníku",
@@ -301,14 +298,14 @@ fun SettingsScreen(
         // 3. SEKCE: ZASTÁVKY A LINKY
         // ==========================================
         item {
-            SettingsCategoryCard(title = "⭐  Zastávky a prioritní linky") {
+            SettingsCategoryCard(title = "Zastávky a prioritní linky") {
                 SegmentedSettingRow(
                     title = "Dosah Chytrého uzlu",
                     subtitle = "Vzdálenost pro sloučení okolních zastávek v jeden celek",
                     options = listOf(
                         300 to "300 m",
-                        380 to "380 m",
-                        520 to "520 m"
+                        400 to "400 m",
+                        500 to "500 m"
                     ),
                     selected = clusterRadius,
                     onSelected = onClusterRadiusChange
@@ -357,7 +354,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Prioritní linky (★)",
+                            text = "Prioritní linky",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
@@ -434,10 +431,10 @@ fun SettingsScreen(
         }
 
         // ==========================================
-        // 4. SEKCE: AUTOMATIKA & DOMÁCÍ WI-FI
+        // 4. SEKCE: AUTOMATIKA & KLIDOVÉ WI-FI
         // ==========================================
         item {
-            SettingsCategoryCard(title = "📶  Automatika a domácí Wi-Fi") {
+            SettingsCategoryCard(title = "Automatika a klidové Wi-Fi") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -466,61 +463,65 @@ fun SettingsScreen(
                     )
                 }
 
-                SettingsDivider()
+                AnimatedVisibility(visible = sleepOnWifi) {
+                    Column {
+                        SettingsDivider()
 
-                // Správa uložených Wi-Fi
-                val currentWifiLabel = if (!currentWifiSsid.isNullOrEmpty()) {
-                    val isSaved = homeWifiSsids.contains(currentWifiSsid)
-                    "Aktuální: $currentWifiSsid (${if (isSaved) "Uložená" else "Není uložena"})"
-                } else {
-                    "Aktuálně nejste připojeni k Wi-Fi"
-                }
+                        // Správa uložených Wi-Fi
+                        val currentWifiLabel = if (!currentWifiSsid.isNullOrEmpty()) {
+                            val isSaved = homeWifiSsids.contains(currentWifiSsid)
+                            "Aktuální: $currentWifiSsid (${if (isSaved) "Uložená" else "Není uložena"})"
+                        } else {
+                            "Aktuálně nejste připojeni k Wi-Fi"
+                        }
 
-                Text(
-                    text = "Klidové Wi-Fi sítě (Doma / Práce)",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = currentWifiLabel,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                        Text(
+                            text = "Klidové Wi-Fi sítě (Doma / Práce)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = currentWifiLabel,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
 
-                if (!currentWifiSsid.isNullOrEmpty() && !homeWifiSsids.contains(currentWifiSsid)) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = { onAddHomeWifi(currentWifiSsid) },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("+ Přidat síť \"$currentWifiSsid\" mezi domácí", fontSize = 12.5.sp)
-                    }
-                }
-
-                if (homeWifiSsids.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        homeWifiSsids.forEach { ssid ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                        if (!currentWifiSsid.isNullOrEmpty() && !homeWifiSsids.contains(currentWifiSsid)) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = { onAddHomeWifi(currentWifiSsid) },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("📶 $ssid", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurface)
-                                Text(
-                                    text = "Odebrat",
-                                    fontSize = 11.5.sp,
-                                    color = Color(0xFF963A2F),
-                                    modifier = Modifier
-                                        .clickable { onRemoveHomeWifi(ssid) }
-                                        .padding(4.dp)
-                                )
+                                Text("+ Přidat síť \"$currentWifiSsid\" mezi domácí", fontSize = 12.5.sp)
+                            }
+                        }
+
+                        if (homeWifiSsids.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                homeWifiSsids.forEach { ssid ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(ssid, fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurface)
+                                        Text(
+                                            text = "Odebrat",
+                                            fontSize = 11.5.sp,
+                                            color = Color(0xFF963A2F),
+                                            modifier = Modifier
+                                                .clickable { onRemoveHomeWifi(ssid) }
+                                                .padding(4.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -560,73 +561,84 @@ fun SettingsScreen(
         // 5. SEKCE: STAV SYSTÉMU A BATERIE
         // ==========================================
         item {
-            SettingsCategoryCard(title = "🛡️  Stav systému a oprávnění") {
+            SettingsCategoryCard(title = "Stav systému a oprávnění") {
                 val items = listOf(
-                    "GPS Poloha" to diagState.hasLoc,
-                    "Krokoměr" to diagState.hasActivity,
+                    "Poloha GPS" to diagState.hasLoc,
+                    "Pohyb a chůze" to diagState.hasActivity,
                     "Notifikace" to diagState.hasNotif,
                     "Baterie (bez omezení)" to diagState.ignoringBatteryOpt
                 )
 
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items.forEach { (label, ok) ->
-                        Column(
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (ok) Color(0xFFE2EFE6) else Color(0xFFF4E3E0))
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (ok) "✓" else "✕",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (ok) Color(0xFF255238) else Color(0xFF963A2F)
-                            )
-                            Text(
                                 text = label,
-                                fontSize = 10.sp,
+                                fontSize = 13.5.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = if (ok) Color(0xFF255238) else Color(0xFF963A2F),
-                                maxLines = 1
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (ok) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.errorContainer
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = if (ok) "Aktivní" else "Chybí",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (ok) MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
                         }
                     }
                 }
 
                 if (!diagState.hasLoc || !diagState.hasActivity || !diagState.hasNotif) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = onRequestPermissions,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Doplnit chybějící oprávnění", fontSize = 12.5.sp)
+                        Text("Doplnit chybějící oprávnění", fontSize = 13.sp)
                     }
                 }
 
                 if (!diagState.ignoringBatteryOpt) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    OutlinedButton(
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FilledTonalButton(
                         onClick = onOpenBatterySettings,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Povolit běh na pozadí", fontSize = 12.5.sp)
+                        Text("Povolit běh na pozadí", fontSize = 13.sp)
                     }
                 }
             }
         }
 
         // ==========================================
-        // 6. SEKCE: AKTUALIZACE A GITHUB
+        // 6. SEKCE: AKTUALIZACE
         // ==========================================
         item {
-            SettingsCategoryCard(title = "⚡  Aktualizace a GitHub") {
+            SettingsCategoryCard(title = "Aktualizace") {
                 AppUpdateBlock(
                     currentVersion = appVersion,
                     updateState = updateState,
@@ -646,7 +658,7 @@ fun SettingsScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Stíhám to? v$appVersion · PMDP Plzeň Live",
+                    text = "Stíhám to? v$appVersion",
                     fontSize = 11.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -780,7 +792,7 @@ private fun AppUpdateBlock(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("⚡ Zkontrolovat aktualizace z GitHubu", fontSize = 13.sp)
+                    Text("Zkontrolovat aktualizace", fontSize = 13.sp)
                 }
             }
 
@@ -810,15 +822,15 @@ private fun AppUpdateBlock(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFFE2EFE6))
+                            .background(MaterialTheme.colorScheme.primaryContainer)
                             .padding(10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "✓ Máte nejnovější verzi (${updateState.version})",
+                            text = "Máte nejnovější verzi (${updateState.version})",
                             fontSize = 12.5.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFF255238)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                     TextButton(
@@ -840,7 +852,7 @@ private fun AppUpdateBlock(
                         .padding(12.dp)
                 ) {
                     Text(
-                        text = "🎉 K dispozici je verze ${info.latestVersionName}!",
+                        text = "K dispozici je verze ${info.latestVersionName}",
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -859,7 +871,7 @@ private fun AppUpdateBlock(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("⬇ Stáhnout a nainstalovat", fontSize = 12.5.sp)
+                        Text("Stáhnout a nainstalovat", fontSize = 12.5.sp)
                     }
                 }
             }
@@ -877,7 +889,7 @@ private fun AppUpdateBlock(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Stahuji APK z GitHubu…", fontSize = 12.5.sp)
+                        Text("Stahuji aktualizaci…", fontSize = 12.5.sp)
                         Text("$percent %", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.height(6.dp))
@@ -898,7 +910,7 @@ private fun AppUpdateBlock(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("📦 Spustit instalaci aktualizace", fontSize = 13.sp)
+                    Text("Nainstalovat aktualizaci", fontSize = 13.sp)
                 }
             }
 
