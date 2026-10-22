@@ -31,6 +31,3 @@ captures/
 # Logs & temp files
 *.log
 *.tmp
-
-# Root APK duplicate (tracked in public/StihamTo-Plzen.apk)
-/StihamTo-Plzen.apk

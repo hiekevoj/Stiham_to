@@ -43,11 +43,9 @@ echo "==> Kompiluji Android aplikaci Stíhám to? (PMDP)..."
 
 APK_SRC="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 APK_DEST="$ROOT_DIR/StihamTo-Plzen.apk"
-APK_PUBLIC="$ROOT_DIR/public/StihamTo-Plzen.apk"
 
 if [ -f "$APK_SRC" ]; then
   cp "$APK_SRC" "$APK_DEST"
-  cp "$APK_SRC" "$APK_PUBLIC"
   echo "✅ Hotovo! APK soubor je připraven:"
   ls -lh "$APK_DEST"
 else

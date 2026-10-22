@@ -66,7 +66,7 @@ fun HomeScreen(
             val nowMs = System.currentTimeMillis()
             result.departures.filter { dep ->
                 val remMs = dep.targetDepartureEpochMs - nowMs
-                remMs >= -30_000L
+                remMs >= -25_000L
             }
         }
     }
@@ -138,7 +138,7 @@ fun HomeScreen(
         }
 
         // 8. Seznam odjezdů nebo chybový stav
-        if (errorMessage != null) {
+        if (errorMessage != null && result == null) {
             item {
                 ErrorCard(message = errorMessage, onRetry = onRetry)
             }
@@ -154,6 +154,48 @@ fun HomeScreen(
                 }
             }
         } else {
+            // Pokud nastala chyba při periodickém refreshi, ale máme předchozí data,
+            // nesmažeme celou obrazovku, ale zobrazíme varovný banner nahoře
+            if (errorMessage != null) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Aktualizace selhala: $errorMessage",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Text(
+                                    text = "Zobrazuji dříve načtené odjezdy",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                            TextButton(onClick = onRetry) {
+                                Text(
+                                    text = "Obnovit ↻",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             if (validDeps.isEmpty()) {
                 item {
                     Text(

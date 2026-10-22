@@ -484,6 +484,21 @@ object PmdpRepository {
     fun calculateStopDistance(stop: PmdpStop, lat: Double, lon: Double): Int {
         val (_, _, minAirDist) = findClosestStopPoint(stop, lat, lon)
         val airInt = minAirDist.roundToInt()
+
+        // Pokud má zastávka označníky s velkým rozptylem (rozsáhlý uzel jako Sady Pětatřicátníků, CAN, Hlavní nádraží)
+        if (stop.markers.size > 2) {
+            val centerDist = haversineMeters(lat, lon, stop.latitude, stop.longitude)
+            val maxSpan = stop.markers.maxOfOrNull { m -> haversineMeters(stop.latitude, stop.longitude, m.latitude, m.longitude) } ?: 0.0
+            if (maxSpan > 65.0) {
+                // Na velkých uzlech nemůže být uživatel "u sloupku" (0-45 m) pro všechny linky naráz,
+                // pokud je uzel roztažený na 150+ metrů. Vzdálenost vyvážíme směrem ke středu nástupišť.
+                val effectiveAir = maxOf(minAirDist, centerDist * 0.72)
+                if (effectiveAir <= 40.0) return effectiveAir.roundToInt()
+                val factor = if (effectiveAir <= 120.0) 1.14 else 1.22
+                return (effectiveAir * factor).roundToInt()
+            }
+        }
+
         if (minAirDist <= 45.0) {
             return airInt
         }
@@ -841,7 +856,7 @@ object PmdpRepository {
                     set(java.util.Calendar.MILLISECOND, 0)
                 }
                 val parsedMs = cal.timeInMillis + ((delayMin ?: 0) * 60_000L)
-                if (abs(parsedMs - fallbackEpoch) <= 300_000L) {
+                if (abs(parsedMs - fallbackEpoch) <= 1_800_000L) {
                     return parsedMs
                 }
             } catch (_: Exception) {
@@ -852,17 +867,17 @@ object PmdpRepository {
 
     fun computeLiveLeavingMinutes(targetDepartureEpochMs: Long, nowMs: Long = System.currentTimeMillis()): Int {
         val remainingMs = targetDepartureEpochMs - nowMs
-        if (remainingMs < -20_000L) {
-            return -1 // Spoj již odjel před více než 20 s
+        if (remainingMs < -15_000L) {
+            return -1 // Spoj již odjel před více než 15 s
         }
-        if (remainingMs in -20_000L..18_000L) return 0
+        if (remainingMs in -15_000L..15_000L) return 0
         // Zaokrouhlení odpovídající reálné tabuli na zastávce
-        return ((remainingMs + 20_000L) / 60_000L).toInt()
+        return ((remainingMs + 15_000L) / 60_000L).toInt()
     }
 
     /**
      * Lokální interní přepočet odjezdů podle aktuálního systémového času (0 % síť, 0 % GPS).
-     * Odfiltruje spoje, které už odjely před > 35 s, a aktualizuje minuty do odjezdu i stav Stíháš/Nestíháš/Odjelo.
+     * Odfiltruje spoje, které už odjely před > 25 s, a aktualizuje minuty do odjezdu i stav Stíháš/Nestíháš/Odjelo.
      */
     fun recalculateWithLiveCountdown(
         res: LiveDeparturesResult,
@@ -872,7 +887,7 @@ object PmdpRepository {
         val updatedDeps = ArrayList<LiveDeparture>(res.departures.size)
         for (dep in res.departures) {
             val remMs = dep.targetDepartureEpochMs - nowMs
-            if (remMs < -35_000L) {
+            if (remMs < -25_000L) {
                 anyChanged = true
                 continue
             }

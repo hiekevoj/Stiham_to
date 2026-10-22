@@ -6,6 +6,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 
@@ -23,10 +24,20 @@ object SmartTriggerMonitor {
 
     fun getConnectedWifiSsid(context: Context): String? {
         try {
+            // Moderní způsob pro Android 12+ (API 31+) přes NetworkCapabilities.transportInfo
+            val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val activeNet = cm?.activeNetwork
+            if (activeNet != null) {
+                val caps = cm.getNetworkCapabilities(activeNet)
+                val wifiInfo = caps?.transportInfo as? WifiInfo
+                val modernClean = PmdpRepository.sanitizeSsid(wifiInfo?.ssid)
+                if (modernClean.isNotEmpty()) return modernClean
+            }
+
+            // Fallback pro starší verze Androidu
             val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            val info = wm?.connectionInfo
-            val clean = PmdpRepository.sanitizeSsid(info?.ssid)
-            if (clean.isNotEmpty()) return clean
+            val legacyClean = PmdpRepository.sanitizeSsid(wm?.connectionInfo?.ssid)
+            if (legacyClean.isNotEmpty()) return legacyClean
         } catch (_: Throwable) {
         }
         return null
@@ -71,7 +82,7 @@ object SmartTriggerMonitor {
                         !LiveDeparturesService.isManualForceOnWifi &&
                         !LiveDeparturesService.isWalkingWifiOverrideActive()
                     ) {
-                        val sleepReason = if (ssid != null && ssid.isNotEmpty()) {
+                        val sleepReason = if (!ssid.isNullOrEmpty()) {
                             "Uspáno (připojeno k Wi-Fi: $ssid)"
                         } else {
                             "Uspáno (připojeno k domácí Wi-Fi)"

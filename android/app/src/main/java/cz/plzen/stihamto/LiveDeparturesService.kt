@@ -298,7 +298,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
                 val prev = lastStepCounterValue
                 lastStepCounterValue = totalSteps
                 if (prev != null && totalSteps > prev) {
-                    val delta = (totalSteps - prev).toInt().coerceIn(1, 15)
+                    val delta = (totalSteps - prev).toInt().coerceIn(1, 100)
                     onHumanStepDetected(now, delta)
                 }
             }
@@ -658,7 +658,6 @@ class LiveDeparturesService : Service(), SensorEventListener {
             while (isActive && isSleepingStandby) {
                 try {
                     delay(15_000L)
-                    val now = System.currentTimeMillis()
                     val nowWifi = SmartTriggerMonitor.isConnectedToWifi(this@LiveDeparturesService)
                     if (wasWifi && !nowWifi) {
                         // Uživatel právě vypnul Wi-Fi nebo vyšel před dům mimo dosah domácí Wi-Fi!
@@ -833,7 +832,6 @@ class LiveDeparturesService : Service(), SensorEventListener {
      * Probudí službu ze spánku (Standby) zpět na zamykací obrazovku!
      */
     private fun wakeUpFromStandby(triggerReason: String) {
-        val wasSleeping = isSleepingStandby
         isSleepingStandby = false
         standbyStepsProgress = 0
         lastSleepReason = null
@@ -927,15 +925,15 @@ class LiveDeparturesService : Service(), SensorEventListener {
                 }
 
                 val effectiveSpeedMps = maxOf(gpsSpeedMps, stepSpeedMps)
-                if (effectiveSpeedMps >= 5.5 && isAccurate) { // >= 20 km/h
+                if (effectiveSpeedMps >= 4.2 && isAccurate) { // >= 15 km/h
                     highSpeedCount++
-                } else if (effectiveSpeedMps < 3.2) {
+                } else if (effectiveSpeedMps < 2.5) {
                     highSpeedCount = maxOf(0, highSpeedCount - 1)
                 }
 
                 val isFastVehicle = isAccurate && (
-                    (highSpeedCount >= 2 && distFromLastFix >= 75.0) ||
-                    (windowDistMeters >= 120.0 && windowSpeedMps >= 5.2)
+                    (highSpeedCount >= 2 && distFromLastFix >= 60.0) ||
+                    (windowDistMeters >= 90.0 && windowSpeedMps >= 3.8)
                 )
 
                 if (isFastVehicle) {
@@ -1082,7 +1080,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
                         // Každých 40 sekund (nebo při prvním spuštění) stáhneme čerstvá data ze serveru PMDP
                         val ok = fetchAndUpdateNotification()
                         if (!ok) {
-                            delay(5_000L)
+                            delay(20_000L)
                             continue
                         }
                     } else {
@@ -1125,7 +1123,6 @@ class LiveDeparturesService : Service(), SensorEventListener {
                     nm.notify(NOTIFICATION_ID, notif)
                 } catch (_: Throwable) {
                 }
-                DeparturesWidgetProvider.updateAllWidgets(this, updated)
                 sendBroadcast(Intent(BROADCAST_LIVE_UPDATE).setPackage(packageName))
             }
         } catch (t: Throwable) {
@@ -1233,7 +1230,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
         val nowMs = System.currentTimeMillis()
         val validDeps = res.departures.filter { dep ->
             val remMs = dep.targetDepartureEpochMs - nowMs
-            remMs >= -35_000L
+            remMs >= -25_000L
         }
         val hideMissed = PmdpRepository.isHideMissedInNotif(this)
         val notifCount = PmdpRepository.getNotifDeparturesCount(this)
@@ -1301,7 +1298,6 @@ class LiveDeparturesService : Service(), SensorEventListener {
                 }
             }
 
-            DeparturesWidgetProvider.updateAllWidgets(this, res)
             sendBroadcast(Intent(BROADCAST_LIVE_UPDATE).setPackage(packageName))
             true
         } catch (e: Exception) {

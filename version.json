@@ -1,8 +1,8 @@
 {
-  "versionCode": 14,
-  "versionName": "0.0.14",
+  "versionCode": 15,
+  "versionName": "0.0.15",
   "releaseDate": "2026-10-22",
-  "apkUrl": "https://raw.githubusercontent.com/hiekevoj/Stiham_to/main/public/StihamTo-Plzen.apk",
+  "apkUrl": "https://raw.githubusercontent.com/hiekevoj/Stiham_to/main/StihamTo-Plzen.apk",
   "fallbackApkUrl": "https://github.com/hiekevoj/Stiham_to/raw/main/StihamTo-Plzen.apk",
-  "releaseNotes": "• Přepracování UI do Jetpack Compose s podporou Material 3 Dynamic Color\n• Možnost přímé aktualizace aplikace z GitHubu\n• Optimalizace baterie a offline pěší model pro Plzeň"
+  "releaseNotes": "• Oprava detekce a stahování aktualizací z GitHubu\n• Odstranění webového simulátoru a widgetu\n• Oprava oprávnění a pádů na Androidu 14\n• Spolehlivější detekce Wi-Fi na Androidu 12+\n• Vylepšený výpočet vzdálenosti na uzlech a oprava odpočtu zpoždění"
 }

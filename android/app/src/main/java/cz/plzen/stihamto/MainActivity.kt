@@ -109,6 +109,13 @@ class MainActivity : AppCompatActivity() {
         refreshFromGpsAndStartLive()
     }
 
+    private val bgLocationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        refreshAllState()
+        refreshFromGpsAndStartLive()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashHandler.init(this)
@@ -282,6 +289,7 @@ class MainActivity : AppCompatActivity() {
                         onSelectStop = { cis ->
                             PmdpRepository.setPinnedStopCis(this@MainActivity, cis)
                             pinnedCisState.value = cis
+                            searchQueryState.value = ""
                             searchResultsState.value = emptyList()
                             triggerRefresh()
                         },
@@ -305,7 +313,7 @@ class MainActivity : AppCompatActivity() {
                     val vName = try {
                         packageManager.getPackageInfo(packageName, 0).versionName
                     } catch (_: Exception) {
-                        "0.0.14"
+                        "0.0.15"
                     }
 
                     SettingsScreen(
@@ -696,9 +704,6 @@ class MainActivity : AppCompatActivity() {
                 )
                 liveResultState.value = res
                 errorMessageState.value = null
-                withContext(Dispatchers.Default) {
-                    DeparturesWidgetProvider.updateAllWidgets(this@MainActivity, res)
-                }
             } catch (e: Exception) {
                 errorMessageState.value = e.message ?: "Zkontrolujte připojení k internetu"
             }
@@ -724,6 +729,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestNeededPermissions() {
+        val hasFineLoc = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val hasBgLoc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        } else true
+
+        // Pokud již máme základní polohu, ale na Androidu 10+ chybí poloha na pozadí,
+        // vyžádáme si samostatně ACCESS_BACKGROUND_LOCATION (požadavek Androidu od verze 11)
+        if (hasFineLoc && !hasBgLoc && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            bgLocationPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            return
+        }
+
         val perms = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION

@@ -11,8 +11,8 @@ android {
         applicationId = "cz.plzen.stihamto"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "0.0.14"
+        versionCode = 15
+        versionName = "0.0.15"
     }
 
     buildTypes {
