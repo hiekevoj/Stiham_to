@@ -13,9 +13,9 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -29,16 +29,24 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import cz.plzen.stihamto.ui.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
-class MainActivity : androidx.appcompat.app.AppCompatActivity() {
+class MainActivity : AppCompatActivity() {
 
     private var searchJob: Job? = null
 
-    // Compose pozorovatelné stavy (inicializované bezpečnými konstantami bez volání Contextu)
+    // Compose stavy pro vzhled a motiv
+    private val themeModeState = mutableStateOf(AppThemeMode.SYSTEM)
+    private val colorThemeState = mutableStateOf(
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) AppColorTheme.DYNAMIC else AppColorTheme.BOTANICAL
+    )
+
+    // Compose stavy pro odjezdy a obrazovku Domů
     private val liveResultState = mutableStateOf<LiveDeparturesResult?>(null)
     private val errorMessageState = mutableStateOf<String?>(null)
     private val heroState = mutableStateOf(
@@ -56,7 +64,6 @@ class MainActivity : androidx.appcompat.app.AppCompatActivity() {
     private val pinnedCisState = mutableStateOf<Int?>(null)
     private val searchQueryState = mutableStateOf("")
     private val searchResultsState = mutableStateOf<List<PmdpStop>>(emptyList())
-    private val dynamicColorState = mutableStateOf(true)
     private val updateUiState = mutableStateOf<UpdateUiState>(UpdateUiState.Idle)
 
     // Nastavení
@@ -73,7 +80,6 @@ class MainActivity : androidx.appcompat.app.AppCompatActivity() {
     private val homeWifiSsidsState = mutableStateOf<Set<String>>(emptySet())
     private val wakeUpStepsState = mutableStateOf(30)
     private val postRideCooldownState = mutableStateOf(10)
-    private val walkPassedLimitState = mutableStateOf(2)
     private val systemDiagState = mutableStateOf(
         SystemDiagState(hasLoc = true, hasActivity = true, hasNotif = true, ignoringBatteryOpt = true)
     )
@@ -117,11 +123,24 @@ class MainActivity : androidx.appcompat.app.AppCompatActivity() {
         SmartTriggerMonitor.ensureWifiCallbackRegistered(this)
         ActivityTransitionManager.registerTransitions(this)
 
-        // Načtení uloženého nastavení Dynamic Color (výchozí true na Android 12+)
+        // Načtení uloženého nastavení motivu
         val prefs = getSharedPreferences("stiham_to_prefs", Context.MODE_PRIVATE)
-        dynamicColorState.value = prefs.getBoolean("dynamic_color", true)
+        val modeStr = prefs.getString("theme_mode", "SYSTEM") ?: "SYSTEM"
+        themeModeState.value = try { AppThemeMode.valueOf(modeStr) } catch (_: Exception) { AppThemeMode.SYSTEM }
+
+        val defaultColor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "DYNAMIC" else "BOTANICAL"
+        val colorStr = prefs.getString("color_theme", defaultColor) ?: defaultColor
+        colorThemeState.value = try { AppColorTheme.valueOf(colorStr) } catch (_: Exception) { AppColorTheme.BOTANICAL }
 
         refreshAllState()
+
+        // Načtení známých linek na pozadí, aby neblokovalo UI thread
+        lifecycleScope.launch(Dispatchers.IO) {
+            val lines = PmdpRepository.getAllKnownLines(applicationContext)
+            withContext(Dispatchers.Main) {
+                allKnownLinesState.value = lines
+            }
+        }
 
         val cached = LiveDeparturesService.latestResult
         if (cached != null && (System.currentTimeMillis() - cached.fetchedEpochMs) < 75_000L) {
@@ -130,19 +149,27 @@ class MainActivity : androidx.appcompat.app.AppCompatActivity() {
             fetchWithCurrentGps()
         }
 
-        // Periodické odpočítávání minut na obrazovce každou sekundu
+        // Plynulý periodický odpočet minut v pozadí (každých 5 s místo 1 s pro eliminaci janku)
         lifecycleScope.launch {
             while (true) {
-                delay(1000)
+                delay(5000)
                 val current = liveResultState.value
                 if (current != null) {
-                    liveResultState.value = PmdpRepository.recalculateWithLiveCountdown(current)
+                    val recalculated = withContext(Dispatchers.Default) {
+                        PmdpRepository.recalculateWithLiveCountdown(current)
+                    }
+                    if (recalculated !== current) {
+                        liveResultState.value = recalculated
+                    }
                 }
             }
         }
 
         setContent {
-            StihamToTheme(dynamicColor = dynamicColorState.value) {
+            StihamToTheme(
+                themeMode = themeModeState.value,
+                colorTheme = colorThemeState.value
+            ) {
                 MainAppScaffold()
             }
         }
@@ -282,6 +309,22 @@ class MainActivity : androidx.appcompat.app.AppCompatActivity() {
                     }
 
                     SettingsScreen(
+                        themeMode = themeModeState.value,
+                        onThemeModeChange = { mode ->
+                            themeModeState.value = mode
+                            getSharedPreferences("stiham_to_prefs", Context.MODE_PRIVATE)
+                                .edit()
+                                .putString("theme_mode", mode.name)
+                                .apply()
+                        },
+                        colorTheme = colorThemeState.value,
+                        onColorThemeChange = { theme ->
+                            colorThemeState.value = theme
+                            getSharedPreferences("stiham_to_prefs", Context.MODE_PRIVATE)
+                                .edit()
+                                .putString("color_theme", theme.name)
+                                .apply()
+                        },
                         walkSpeed = walkSpeedState.value,
                         onWalkSpeedChange = { mode ->
                             PmdpRepository.setWalkSpeedMode(this@MainActivity, mode)
@@ -360,22 +403,9 @@ class MainActivity : androidx.appcompat.app.AppCompatActivity() {
                             PmdpRepository.setPostRideCooldownMinutes(this@MainActivity, min)
                             postRideCooldownState.value = min
                         },
-                        walkPassedLimit = walkPassedLimitState.value,
-                        onWalkPassedLimitChange = { limit ->
-                            PmdpRepository.setWalkPassedStopsLimit(this@MainActivity, limit)
-                            walkPassedLimitState.value = limit
-                        },
                         diagState = systemDiagState.value,
                         onRequestPermissions = { requestNeededPermissions() },
                         onOpenBatterySettings = { openBatterySettings() },
-                        dynamicColorEnabled = dynamicColorState.value,
-                        onDynamicColorToggle = { enabled ->
-                            dynamicColorState.value = enabled
-                            getSharedPreferences("stiham_to_prefs", Context.MODE_PRIVATE)
-                                .edit()
-                                .putBoolean("dynamic_color", enabled)
-                                .apply()
-                        },
                         updateState = updateUiState.value,
                         onCheckForUpdates = { checkForAppUpdate() },
                         onDownloadAndInstall = { info -> downloadAndInstallUpdate(info) },
@@ -438,13 +468,11 @@ class MainActivity : androidx.appcompat.app.AppCompatActivity() {
         clusterRadiusState.value = PmdpRepository.getClusterRadiusMeters(this)
         autoTramState.value = PmdpRepository.isAutoIncludeTramEnabled(this)
         favoriteLinesState.value = PmdpRepository.getFavoriteLines(this)
-        allKnownLinesState.value = PmdpRepository.getAllKnownLines(this)
         sleepOnWifiState.value = PmdpRepository.isSleepOnWifiEnabled(this)
         currentWifiSsidState.value = SmartTriggerMonitor.getConnectedWifiSsid(this)
         homeWifiSsidsState.value = PmdpRepository.getHomeWifiSsids(this)
         wakeUpStepsState.value = PmdpRepository.getWakeUpStepsThreshold(this)
         postRideCooldownState.value = PmdpRepository.getPostRideCooldownMinutes(this)
-        walkPassedLimitState.value = PmdpRepository.getWalkPassedStopsLimit(this)
         systemDiagState.value = getSystemDiagState()
     }
 
@@ -668,7 +696,9 @@ class MainActivity : androidx.appcompat.app.AppCompatActivity() {
                 )
                 liveResultState.value = res
                 errorMessageState.value = null
-                DeparturesWidgetProvider.updateAllWidgets(this@MainActivity, res)
+                withContext(Dispatchers.Default) {
+                    DeparturesWidgetProvider.updateAllWidgets(this@MainActivity, res)
+                }
             } catch (e: Exception) {
                 errorMessageState.value = e.message ?: "Zkontrolujte připojení k internetu"
             }
@@ -686,7 +716,9 @@ class MainActivity : androidx.appcompat.app.AppCompatActivity() {
 
         searchJob = lifecycleScope.launch {
             delay(150)
-            val matches = PmdpRepository.searchStopsByName(this@MainActivity, trimmed, limit = 6)
+            val matches = withContext(Dispatchers.IO) {
+                PmdpRepository.searchStopsByName(this@MainActivity, trimmed, limit = 6)
+            }
             searchResultsState.value = matches
         }
     }

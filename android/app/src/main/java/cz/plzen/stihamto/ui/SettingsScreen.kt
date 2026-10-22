@@ -3,6 +3,7 @@ package cz.plzen.stihamto.ui
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,6 +41,10 @@ data class SystemDiagState(
 
 @Composable
 fun SettingsScreen(
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit,
+    colorTheme: AppColorTheme,
+    onColorThemeChange: (AppColorTheme) -> Unit,
     walkSpeed: String,
     onWalkSpeedChange: (String) -> Unit,
     crosswalkBuffer: Int,
@@ -66,114 +71,221 @@ fun SettingsScreen(
     onWakeUpStepsChange: (Int) -> Unit,
     postRideCooldown: Int,
     onPostRideCooldownChange: (Int) -> Unit,
-    walkPassedLimit: Int,
-    onWalkPassedLimitChange: (Int) -> Unit,
     diagState: SystemDiagState,
     onRequestPermissions: () -> Unit,
     onOpenBatterySettings: () -> Unit,
-    dynamicColorEnabled: Boolean,
-    onDynamicColorToggle: (Boolean) -> Unit,
     updateState: UpdateUiState,
     onCheckForUpdates: () -> Unit,
     onDownloadAndInstall: (UpdateCheckResult) -> Unit,
     onInstallDownloaded: (File) -> Unit,
     appVersion: String
 ) {
-    var globalHelpExpanded by remember { mutableStateOf(false) }
     var favPickerExpanded by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 40.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 44.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Hlavička
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "Nastavení",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Serif,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        text = "CHŮZE, ZASTÁVKY A CHYTRÁ AUTOMATIKA",
-                        fontSize = 10.sp,
-                        letterSpacing = 1.2.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                FilterChip(
-                    selected = globalHelpExpanded,
-                    onClick = { globalHelpExpanded = !globalHelpExpanded },
-                    label = { Text(if (globalHelpExpanded) "Skrýt ?" else "Popisky ?", fontSize = 12.sp) },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.primary,
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        labelColor = MaterialTheme.colorScheme.primary
-                    )
+            Column(modifier = Modifier.padding(bottom = 2.dp)) {
+                Text(
+                    text = "Nastavení",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Serif,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = "PŘIZPŮSOBENÍ, VÝPOČET A AUTOMATIKA",
+                    fontSize = 10.sp,
+                    letterSpacing = 1.2.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        // === SEKCE 1: CHŮZE A SPOJE ===
-        item { SectionLabel("CHŮZE A SPOJE") }
+        // ==========================================
+        // 1. SEKCE: VZHLED A BAREVNÝ STYL
+        // ==========================================
         item {
-            SettingsCard {
-                ChoiceSettingBlock(
+            SettingsCategoryCard(title = "🎨  Vzhled a téma") {
+                // Přepínač Světlý / Tmavý / Systém
+                Text(
+                    text = "Režim zobrazení",
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AppThemeMode.values().forEach { mode ->
+                        val isSelected = themeMode == mode
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                                .clickable { onThemeModeChange(mode) }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = mode.title,
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                SettingsDivider()
+
+                // Výběr barevné palety
+                Text(
+                    text = "Barevný styl aplikace",
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val availableThemes = remember {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        AppColorTheme.values().toList()
+                    } else {
+                        AppColorTheme.values().filter { it != AppColorTheme.DYNAMIC }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    availableThemes.forEach { item ->
+                        val isSelected = colorTheme == item
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                    else Color.Transparent
+                                )
+                                .clickable { onColorThemeChange(item) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(item.primaryColor)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.title,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = item.subtitle,
+                                    fontSize = 11.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (isSelected) {
+                                Text(
+                                    text = "✓",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 2. SEKCE: CHŮZE A VÝPOČET SPOJŮ
+        // ==========================================
+        item {
+            SettingsCategoryCard(title = "🚶  Chůze a vyhodnocení spojů") {
+                SegmentedSettingRow(
                     title = "Tempo chůze",
-                    helpText = "Podle tvého tempa počítáme, kolik minut půjdeš na zastávku a jestli spoj v klidu stihneš.",
-                    showHelp = globalHelpExpanded,
+                    subtitle = "Rychlost pro výpočet docházkové doby k označníku",
                     options = listOf(
-                        "relaxed" to "Klidné",
-                        "normal" to "Běžné",
-                        "brisk" to "Svižné"
+                        "relaxed" to "Klidné (3,8 km/h)",
+                        "normal" to "Běžné (4,4 km/h)",
+                        "brisk" to "Svižné (5,3 km/h)"
                     ),
                     selected = walkSpeed,
                     onSelected = onWalkSpeedChange
                 )
+
                 SettingsDivider()
-                ChoiceSettingBlock(
-                    title = "Rezerva na přechody a semafory",
-                    helpText = "Přidá časovou rezervu na červenou, aby ti tramvaj neujela před nosem.",
-                    showHelp = globalHelpExpanded,
+
+                SegmentedSettingRow(
+                    title = "Časová rezerva na semafory",
+                    subtitle = "Přidá rezervu na červenou na přechodu",
                     options = listOf(
-                        0 to "Bez rezervy",
+                        0 to "0 s",
                         30 to "+30 s",
                         60 to "+1 min"
                     ),
                     selected = crosswalkBuffer,
                     onSelected = onCrosswalkBufferChange
                 )
+
                 SettingsDivider()
-                ChoiceSettingBlock(
-                    title = "Ujíždějící spoje v notifikaci",
-                    helpText = "Schová z notifikace spoje se stavem Nestíháš pro více místa na reálné odjezdy.",
-                    showHelp = globalHelpExpanded,
-                    options = listOf(
-                        false to "Ukazovat vše",
-                        true to "Skrýt Nestíháš"
-                    ),
-                    selected = hideMissed,
-                    onSelected = onHideMissedChange
-                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Skrýt ujíždějící spoje",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "V notifikaci nezobrazovat spoje se stavem Nestíháš",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = hideMissed,
+                        onCheckedChange = onHideMissedChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                }
+
                 SettingsDivider()
-                ChoiceSettingBlock(
+
+                SegmentedSettingRow(
                     title = "Počet spojů v notifikaci",
-                    helpText = "Určuje, kolik nejbližších odjezdů se vypíše v notifikaci na zamykací obrazovce.",
-                    showHelp = globalHelpExpanded,
+                    subtitle = "Kolik nejbližších spojů se vejde na zamykací obrazovku",
                     options = listOf(
                         3 to "3 spoje",
                         4 to "4 spoje",
@@ -185,165 +297,336 @@ fun SettingsScreen(
             }
         }
 
-        // === SEKCE 2: ZASTÁVKY A LINKY V OKOLÍ ===
-        item { SectionLabel("ZASTÁVKY A LINKY V OKOLÍ") }
+        // ==========================================
+        // 3. SEKCE: ZASTÁVKY A LINKY
+        // ==========================================
         item {
-            SettingsCard {
-                ChoiceSettingBlock(
+            SettingsCategoryCard(title = "⭐  Zastávky a prioritní linky") {
+                SegmentedSettingRow(
                     title = "Dosah Chytrého uzlu",
-                    helpText = "Jak daleko kolem tebe má aplikace hledat další zastávky při zapnutém Chytrém uzlu.",
-                    showHelp = globalHelpExpanded,
+                    subtitle = "Vzdálenost pro sloučení okolních zastávek v jeden celek",
                     options = listOf(
-                        300 to "Blízko (300 m)",
-                        380 to "Střední (380 m)",
-                        520 to "Širší (520 m)"
+                        300 to "300 m",
+                        380 to "380 m",
+                        520 to "520 m"
                     ),
                     selected = clusterRadius,
                     onSelected = onClusterRadiusChange
                 )
+
                 SettingsDivider()
-                ChoiceSettingBlock(
-                    title = "Přibrat tramvaj v okolí",
-                    helpText = "Když máš u sebe jen autobus/trolejbus, automaticky načte i nejbližší tramvaj.",
-                    showHelp = globalHelpExpanded,
-                    options = listOf(
-                        true to "Automaticky",
-                        false to "Jen nejbližší"
-                    ),
-                    selected = autoTram,
-                    onSelected = onAutoTramChange
-                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Automaticky přibrat tramvaj",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Při chůzi u busu/trolejbusu načte i nejbližší tramvaj",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = autoTram,
+                        onCheckedChange = onAutoTramChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                }
+
                 SettingsDivider()
-                FavoriteLinesBlock(
-                    favoriteLines = favoriteLines,
-                    allLines = allKnownLines,
-                    showHelp = globalHelpExpanded,
-                    isExpanded = favPickerExpanded,
-                    onToggleExpand = { favPickerExpanded = !favPickerExpanded },
-                    onToggleFavorite = onToggleFavoriteLine,
-                    onClearAll = onClearFavoriteLines
-                )
+
+                // Výběr prioritních linek
+                val favText = if (favoriteLines.isEmpty()) "Žádná vybraná linka"
+                else "Vybráno: ${favoriteLines.sorted().joinToString(", ")}"
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Prioritní linky (★)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = favText,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = { favPickerExpanded = !favPickerExpanded },
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Text(if (favPickerExpanded) "Hotovo" else "Vybrat")
+                    }
+                }
+
+                AnimatedVisibility(visible = favPickerExpanded) {
+                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                        val columns = 5
+                        val rows = allKnownLines.chunked(columns)
+
+                        rows.forEach { rowItems ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                for (i in 0 until columns) {
+                                    if (i < rowItems.size) {
+                                        val lineName = rowItems[i]
+                                        val isFav = favoriteLines.contains(lineName)
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(
+                                                    if (isFav) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.surfaceVariant
+                                                )
+                                                .clickable { onToggleFavoriteLine(lineName) }
+                                                .padding(vertical = 8.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = lineName,
+                                                fontSize = 13.sp,
+                                                fontWeight = if (isFav) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (isFav) MaterialTheme.colorScheme.onPrimary
+                                                else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    } else {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+
+                        if (favoriteLines.isNotEmpty()) {
+                            TextButton(
+                                onClick = onClearFavoriteLines,
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            ) {
+                                Text("Zrušit všechny prioritní linky", color = Color(0xFF963A2F), fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // === SEKCE 3: AUTOMATIKA A SPÁNEK ===
-        item { SectionLabel("AUTOMATIKA A SPÁNEK") }
+        // ==========================================
+        // 4. SEKCE: AUTOMATIKA & DOMÁCÍ WI-FI
+        // ==========================================
         item {
-            SettingsCard {
-                ChoiceSettingBlock(
-                    title = "Režim na domácí Wi-Fi",
-                    helpText = "Dokud jsi na domácí Wi-Fi, sledování odpočívá s nulovou spotřebou a zapne se až při odchodu.",
-                    showHelp = globalHelpExpanded,
-                    options = listOf(
-                        true to "Doma spí",
-                        false to "Běží i na Wi-Fi"
-                    ),
-                    selected = sleepOnWifi,
-                    onSelected = onSleepOnWifiChange
-                )
+            SettingsCategoryCard(title = "📶  Automatika a domácí Wi-Fi") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Režim spánku na Wi-Fi",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Doma odpočívá s nulovou spotřebou, probudí se při odchodu",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = sleepOnWifi,
+                        onCheckedChange = onSleepOnWifiChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                }
+
                 SettingsDivider()
-                HomeWifiBlock(
-                    currentWifiSsid = currentWifiSsid,
-                    savedSsids = homeWifiSsids,
-                    showHelp = globalHelpExpanded,
-                    onAddHomeWifi = onAddHomeWifi,
-                    onRemoveHomeWifi = onRemoveHomeWifi
+
+                // Správa uložených Wi-Fi
+                val currentWifiLabel = if (!currentWifiSsid.isNullOrEmpty()) {
+                    val isSaved = homeWifiSsids.contains(currentWifiSsid)
+                    "Aktuální: $currentWifiSsid (${if (isSaved) "Uložená" else "Není uložena"})"
+                } else {
+                    "Aktuálně nejste připojeni k Wi-Fi"
+                }
+
+                Text(
+                    text = "Klidové Wi-Fi sítě (Doma / Práce)",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+                Text(
+                    text = currentWifiLabel,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (!currentWifiSsid.isNullOrEmpty() && !homeWifiSsids.contains(currentWifiSsid)) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { onAddHomeWifi(currentWifiSsid) },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("+ Přidat síť \"$currentWifiSsid\" mezi domácí", fontSize = 12.5.sp)
+                    }
+                }
+
+                if (homeWifiSsids.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        homeWifiSsids.forEach { ssid ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("📶 $ssid", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    text = "Odebrat",
+                                    fontSize = 11.5.sp,
+                                    color = Color(0xFF963A2F),
+                                    modifier = Modifier
+                                        .clickable { onRemoveHomeWifi(ssid) }
+                                        .padding(4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 SettingsDivider()
-                ChoiceSettingBlock(
+
+                SegmentedSettingRow(
                     title = "Probuzení chůzí (krokoměr)",
-                    helpText = "Kolik souvislých kroků stačí udělat, aby se aplikace probudila a rozsvítila odjezdy.",
-                    showHelp = globalHelpExpanded,
+                    subtitle = "Počet kroků pro automatické rozsvícení odjezdů",
                     options = listOf(
-                        15 to "Citlivé (15)",
-                        30 to "Běžné (30)",
-                        50 to "Odolné (50)"
+                        15 to "15 kroků",
+                        30 to "30 kroků",
+                        50 to "50 kroků"
                     ),
                     selected = wakeUpSteps,
                     onSelected = onWakeUpStepsChange
                 )
+
                 SettingsDivider()
-                ChoiceSettingBlock(
+
+                SegmentedSettingRow(
                     title = "Pauza po jízdě v MHD",
-                    helpText = "Po vystoupení dá sledování pauzu, aby se cestou ze zastávky hned nezapínalo.",
-                    showHelp = globalHelpExpanded,
+                    subtitle = "Pauza po výstupu, aby se sledování hned nezapínalo",
                     options = listOf(
-                        0 to "Bez pauzy",
+                        0 to "Vypnuto",
                         10 to "10 min",
                         20 to "20 min"
                     ),
                     selected = postRideCooldown,
                     onSelected = onPostRideCooldownChange
                 )
-                SettingsDivider()
-                ChoiceSettingBlock(
-                    title = "Rozpoznání procházky",
-                    helpText = "Když procházíš městem a mineš několik zastávek bez nástupu, aplikace usne.",
-                    showHelp = globalHelpExpanded,
-                    options = listOf(
-                        2 to "Po 2 zastávkách",
-                        3 to "Po 3 zastávkách",
-                        0 to "Vypnuto"
-                    ),
-                    selected = walkPassedLimit,
-                    onSelected = onWalkPassedLimitChange
-                )
             }
         }
 
-        // === SEKCE 4: VZHLED & MATERIAL YOU ===
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            item { SectionLabel("VZHLED A TÉMA") }
-            item {
-                SettingsCard {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
+        // ==========================================
+        // 5. SEKCE: STAV SYSTÉMU A BATERIE
+        // ==========================================
+        item {
+            SettingsCategoryCard(title = "🛡️  Stav systému a oprávnění") {
+                val items = listOf(
+                    "GPS Poloha" to diagState.hasLoc,
+                    "Krokoměr" to diagState.hasActivity,
+                    "Notifikace" to diagState.hasNotif,
+                    "Baterie (bez omezení)" to diagState.ignoringBatteryOpt
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items.forEach { (label, ok) ->
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (ok) Color(0xFFE2EFE6) else Color(0xFFF4E3E0))
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             Text(
-                                text = "Dynamické barvy (Material You)",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                text = if (ok) "✓" else "✕",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (ok) Color(0xFF255238) else Color(0xFF963A2F)
                             )
                             Text(
-                                text = "Přizpůsobit barvy aplikace tapetě telefonu",
-                                fontSize = 12.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = label,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (ok) Color(0xFF255238) else Color(0xFF963A2F),
+                                maxLines = 1
                             )
                         }
-                        Switch(
-                            checked = dynamicColorEnabled,
-                            onCheckedChange = onDynamicColorToggle,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
-                            )
-                        )
+                    }
+                }
+
+                if (!diagState.hasLoc || !diagState.hasActivity || !diagState.hasNotif) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = onRequestPermissions,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Doplnit chybějící oprávnění", fontSize = 12.5.sp)
+                    }
+                }
+
+                if (!diagState.ignoringBatteryOpt) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = onOpenBatterySettings,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Povolit běh na pozadí", fontSize = 12.5.sp)
                     }
                 }
             }
         }
 
-        // === SEKCE 5: STAV SYSTÉMU A BATERIE ===
-        item { SectionLabel("STAV SYSTÉMU A BATERIE") }
+        // ==========================================
+        // 6. SEKCE: AKTUALIZACE A GITHUB
+        // ==========================================
         item {
-            SettingsCard {
-                SystemDiagBlock(
-                    diagState = diagState,
-                    showHelp = globalHelpExpanded,
-                    onRequestPermissions = onRequestPermissions,
-                    onOpenBatterySettings = onOpenBatterySettings
-                )
-            }
-        }
-
-        // === SEKCE 6: AKTUALIZACE A GITHUB ===
-        item { SectionLabel("AKTUALIZACE A GITHUB") }
-        item {
-            SettingsCard {
+            SettingsCategoryCard(title = "⚡  Aktualizace a GitHub") {
                 AppUpdateBlock(
                     currentVersion = appVersion,
                     updateState = updateState,
@@ -359,11 +642,11 @@ fun SettingsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 16.dp),
+                    .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Stíhám to? v$appVersion · Plzeň MHD (Material 3)",
+                    text = "Stíhám to? v$appVersion · PMDP Plzeň Live",
                     fontSize = 11.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -373,93 +656,61 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text,
-        fontSize = 10.sp,
-        letterSpacing = 1.2.sp,
-        fontWeight = FontWeight.Medium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 6.dp, top = 8.dp)
-    )
-}
-
-@Composable
-private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsCategoryCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            content = content
-        )
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            content()
+        }
     }
 }
 
 @Composable
 private fun SettingsDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(vertical = 14.dp),
+        modifier = Modifier.padding(vertical = 12.dp),
         thickness = 1.dp,
-        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
     )
 }
 
 @Composable
-private fun <T> ChoiceSettingBlock(
+private fun <T> SegmentedSettingRow(
     title: String,
-    helpText: String,
-    showHelp: Boolean,
+    subtitle: String,
     options: List<Pair<T, String>>,
     selected: T,
     onSelected: (T) -> Unit
 ) {
-    var localHelp by remember { mutableStateOf(false) }
-    val isHelpVisible = showHelp || localHelp
-
     Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { localHelp = !localHelp },
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = title,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(if (isHelpVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "?",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isHelpVisible) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
-                )
-            }
-        }
+        Text(
+            text = title,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = subtitle,
+            fontSize = 11.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
 
-        AnimatedVisibility(visible = isHelpVisible) {
-            Text(
-                text = helpText,
-                fontSize = 12.5.sp,
-                lineHeight = 17.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -469,422 +720,24 @@ private fun <T> ChoiceSettingBlock(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(10.dp))
                         .background(
                             if (active) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.surfaceVariant
                         )
                         .clickable { onSelected(value) }
-                        .padding(vertical = 9.dp, horizontal = 4.dp),
+                        .padding(vertical = 8.dp, horizontal = 2.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = label,
-                        fontSize = 12.5.sp,
-                        fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
+                        fontSize = 12.sp,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
                         color = if (active) MaterialTheme.colorScheme.onPrimary
                         else MaterialTheme.colorScheme.onSurface,
                         maxLines = 1
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FavoriteLinesBlock(
-    favoriteLines: Set<String>,
-    allLines: List<String>,
-    showHelp: Boolean,
-    isExpanded: Boolean,
-    onToggleExpand: () -> Unit,
-    onToggleFavorite: (String) -> Unit,
-    onClearAll: () -> Unit
-) {
-    var localHelp by remember { mutableStateOf(false) }
-    val isHelpVisible = showHelp || localHelp
-
-    val sortedFavs = remember(favoriteLines) {
-        favoriteLines.sortedWith(
-            compareBy<String> { it.startsWith("N", ignoreCase = true) }
-                .thenBy { it.filter { ch -> ch.isDigit() }.toIntOrNull() ?: 999 }
-        )
-    }
-
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { localHelp = !localHelp },
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Prioritní linky",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(if (isHelpVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "?",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isHelpVisible) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        AnimatedVisibility(visible = isHelpVisible) {
-            Text(
-                text = "Spoje tvých prioritních linek se v aplikaci i v notifikaci řadí vždy na první místo.",
-                fontSize = 12.5.sp,
-                lineHeight = 17.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (sortedFavs.isEmpty()) "Zatím nemáš vybranou prioritní linku"
-                else "Vybráno: ${sortedFavs.joinToString(", ")}",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f)
-            )
-            Button(
-                onClick = onToggleExpand,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = if (isExpanded) "Hotovo" else "Upravit linky",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        AnimatedVisibility(visible = isExpanded) {
-            Column(modifier = Modifier.padding(top = 12.dp)) {
-                val columns = 5
-                val rows = allLines.chunked(columns)
-
-                rows.forEach { rowItems ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        for (i in 0 until columns) {
-                            if (i < rowItems.size) {
-                                val lineName = rowItems[i]
-                                val isFav = favoriteLines.contains(lineName)
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(
-                                            if (isFav) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.surfaceVariant
-                                        )
-                                        .clickable { onToggleFavorite(lineName) }
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = lineName,
-                                        fontSize = 13.sp,
-                                        fontWeight = if (isFav) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isFav) MaterialTheme.colorScheme.onPrimary
-                                        else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            } else {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
-
-                if (favoriteLines.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Button(
-                        onClick = onClearAll,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4E3E0))
-                    ) {
-                        Text(
-                            text = "Zrušit všechny prioritní linky",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF963A2F)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeWifiBlock(
-    currentWifiSsid: String?,
-    savedSsids: Set<String>,
-    showHelp: Boolean,
-    onAddHomeWifi: (String) -> Unit,
-    onRemoveHomeWifi: (String) -> Unit
-) {
-    var localHelp by remember { mutableStateOf(false) }
-    val isHelpVisible = showHelp || localHelp
-
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { localHelp = !localHelp },
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Klidové Wi-Fi zóny (Doma / Práce)",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(if (isHelpVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "?",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isHelpVisible) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        AnimatedVisibility(visible = isHelpVisible) {
-            Text(
-                text = "Aplikace usne a přestane čerpat baterii pouze na zde uložených Wi-Fi sítích. Ve vozech PMDP se neuspává.",
-                fontSize = 12.5.sp,
-                lineHeight = 17.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        val wifiText = if (!currentWifiSsid.isNullOrEmpty()) {
-            val isSaved = savedSsids.contains(currentWifiSsid)
-            "Aktuální Wi-Fi: $currentWifiSsid (${if (isSaved) "Uložená" else "Není uložena"})"
-        } else {
-            "Aktuálně nejste na Wi-Fi síti"
-        }
-
-        Text(
-            text = wifiText,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        if (!currentWifiSsid.isNullOrEmpty() && !savedSsids.contains(currentWifiSsid)) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = { onAddHomeWifi(currentWifiSsid) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Text(
-                    text = "+ Přidat síť \"$currentWifiSsid\" mezi domácí",
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        if (savedSsids.isEmpty()) {
-            Text(
-                text = "Zatím nemáte uloženou žádnou specifickou Wi-Fi (aplikace se uspává na jakékoliv ne-veřejné Wi-Fi).",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            savedSsids.forEach { ssid ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "📶 $ssid",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Odebrat",
-                        fontSize = 12.sp,
-                        color = Color(0xFF963A2F),
-                        modifier = Modifier
-                            .clickable { onRemoveHomeWifi(ssid) }
-                            .padding(4.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SystemDiagBlock(
-    diagState: SystemDiagState,
-    showHelp: Boolean,
-    onRequestPermissions: () -> Unit,
-    onOpenBatterySettings: () -> Unit
-) {
-    var localHelp by remember { mutableStateOf(false) }
-    val isHelpVisible = showHelp || localHelp
-
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { localHelp = !localHelp },
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Oprávnění a běh na pozadí",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(if (isHelpVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "?",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isHelpVisible) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        AnimatedVisibility(visible = isHelpVisible) {
-            Text(
-                text = "Aby se odjezdy spolehlivě rozsvítily i s telefonem v kapse, systém nesmí aplikaci uspávat.",
-                fontSize = 12.5.sp,
-                lineHeight = 17.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        val items = listOf(
-            "Přesná poloha (GPS)" to diagState.hasLoc,
-            "Rozpoznání chůze (krokoměr)" to diagState.hasActivity,
-            "Notifikace na zamykací obrazovce" to diagState.hasNotif,
-            "Neomezený běh na pozadí (baterie)" to diagState.ignoringBatteryOpt
-        )
-
-        items.forEach { (label, ok) ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = label,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (ok) Color(0xFFE2EFE6) else Color(0xFFF4E3E0))
-                        .padding(horizontal = 10.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = if (ok) "V pořádku" else "Chybí",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = if (ok) Color(0xFF255238) else Color(0xFF963A2F)
-                    )
-                }
-            }
-        }
-
-        if (!diagState.hasLoc || !diagState.hasActivity || !diagState.hasNotif) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Button(
-                onClick = onRequestPermissions,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Text(
-                    text = "Doplnit chybějící oprávnění",
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            }
-        }
-
-        if (!diagState.ignoringBatteryOpt) {
-            Spacer(modifier = Modifier.height(6.dp))
-            OutlinedButton(
-                onClick = onOpenBatterySettings,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text(
-                    text = "Povolit běh na pozadí bez uspávání",
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary
-                )
             }
         }
     }
@@ -905,40 +758,29 @@ private fun AppUpdateBlock(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Aktualizace aplikace",
-                fontSize = 15.sp,
+                text = "Verze aplikace",
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = "v$currentVersion",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
             )
         }
 
-        Text(
-            text = "Aplikace se synchronizuje přímo s repozitářem na GitHubu a umí se sama aktualizovat bez nutnosti Google Play.",
-            fontSize = 12.5.sp,
-            lineHeight = 17.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
-        )
+        Spacer(modifier = Modifier.height(10.dp))
 
         when (updateState) {
             is UpdateUiState.Idle -> {
                 Button(
                     onClick = onCheck,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        text = "⚡ Zkontrolovat aktualizace z GitHubu",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                    Text("⚡ Zkontrolovat aktualizace z GitHubu", fontSize = 13.sp)
                 }
             }
 
@@ -946,23 +788,19 @@ private fun AppUpdateBlock(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(14.dp),
+                        .padding(12.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Ověřuji novou verzi na GitHubu…",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Text("Ověřuji novou verzi…", fontSize = 12.5.sp)
                 }
             }
 
@@ -971,24 +809,23 @@ private fun AppUpdateBlock(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(10.dp))
                             .background(Color(0xFFE2EFE6))
-                            .padding(12.dp),
+                            .padding(10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "✓ Máte nejnovější verzi (${updateState.version})",
-                            fontSize = 13.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.Medium,
                             color = Color(0xFF255238)
                         )
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
                     TextButton(
                         onClick = onCheck,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
-                        Text("Zkontrolovat znovu", fontSize = 12.sp)
+                        Text("Zkontrolovat znovu", fontSize = 11.5.sp)
                     }
                 }
             }
@@ -998,38 +835,31 @@ private fun AppUpdateBlock(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(14.dp)
+                        .padding(12.dp)
                 ) {
                     Text(
                         text = "🎉 K dispozici je verze ${info.latestVersionName}!",
-                        fontSize = 14.sp,
+                        fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     if (info.releaseNotes.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = info.releaseNotes,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
+                            fontSize = 11.5.sp,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Button(
                         onClick = { onDownload(info) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text(
-                            text = "⬇ Stáhnout a nainstalovat",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
+                        Text("⬇ Stáhnout a nainstalovat", fontSize = 12.5.sp)
                     }
                 }
             }
@@ -1038,36 +868,26 @@ private fun AppUpdateBlock(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(14.dp)
+                        .padding(12.dp)
                 ) {
                     val percent = (updateState.progress * 100).toInt()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "Stahuji APK z GitHubu…",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "$percent %",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Text("Stahuji APK z GitHubu…", fontSize = 12.5.sp)
+                        Text("$percent %", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     LinearProgressIndicator(
                         progress = { updateState.progress },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp)),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surface
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -1076,41 +896,26 @@ private fun AppUpdateBlock(
                 Button(
                     onClick = { onInstall(updateState.file) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        text = "📦 Spustit instalaci aktualizace",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                    Text("📦 Spustit instalaci aktualizace", fontSize = 13.sp)
                 }
             }
 
             is UpdateUiState.Error -> {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFFF4E3E0))
-                            .padding(12.dp)
-                    ) {
-                        Text(
-                            text = "Chyba při stahování: ${updateState.message}",
-                            fontSize = 12.5.sp,
-                            color = Color(0xFF963A2F)
-                        )
-                    }
+                    Text(
+                        text = "Chyba: ${updateState.message}",
+                        fontSize = 12.sp,
+                        color = Color(0xFF963A2F)
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
                     Button(
                         onClick = onCheck,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Zkusit znovu", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onPrimary)
+                        Text("Zkusit znovu", fontSize = 12.sp)
                     }
                 }
             }

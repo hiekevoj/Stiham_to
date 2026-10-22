@@ -60,6 +60,17 @@ fun HomeScreen(
     onToggleFavoriteLine: (String) -> Unit,
     onRetry: () -> Unit
 ) {
+    val validDeps = remember(result) {
+        if (result == null) emptyList()
+        else {
+            val nowMs = System.currentTimeMillis()
+            result.departures.filter { dep ->
+                val remMs = dep.targetDepartureEpochMs - nowMs
+                remMs >= -30_000L
+            }
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -143,12 +154,6 @@ fun HomeScreen(
                 }
             }
         } else {
-            val nowMs = System.currentTimeMillis()
-            val validDeps = result.departures.filter { dep ->
-                val remMs = dep.targetDepartureEpochMs - nowMs
-                remMs >= -30_000L
-            }
-
             if (validDeps.isEmpty()) {
                 item {
                     Text(
@@ -626,12 +631,8 @@ private fun DepartureCard(
             .alpha(cardAlpha),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = if (departure.isFavorite) CardDefaults.outlinedCardBorder().copy(
-            brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-            width = 2.dp
-        ) else CardDefaults.outlinedCardBorder().copy(
-            brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.outline)
-        )
+        border = if (departure.isFavorite) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
     ) {
         Row(
             modifier = Modifier

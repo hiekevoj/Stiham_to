@@ -230,16 +230,22 @@ object PmdpRepository {
             .edit().putStringSet("fav_lines", emptySet()).apply()
     }
 
+    @Volatile
+    private var cachedKnownLines: List<String>? = null
+
     fun getAllKnownLines(context: Context): List<String> {
+        cachedKnownLines?.let { return it }
         val all = loadStops(context)
             .flatMap { it.lines }
             .map { it.name }
             .distinct()
-        return all.sortedWith(
+        val sorted = all.sortedWith(
             compareBy<String> { it.startsWith("N", ignoreCase = true) }
                 .thenBy { it.filter { ch -> ch.isDigit() }.toIntOrNull() ?: 999 }
                 .thenBy { it }
         )
+        cachedKnownLines = sorted
+        return sorted
     }
 
     fun getFavoriteLines(context: Context): Set<String> {
@@ -862,32 +868,29 @@ object PmdpRepository {
         res: LiveDeparturesResult,
         nowMs: Long = System.currentTimeMillis()
     ): LiveDeparturesResult {
-        val updatedDeps = res.departures.mapNotNull { dep ->
+        var anyChanged = false
+        val updatedDeps = ArrayList<LiveDeparture>(res.departures.size)
+        for (dep in res.departures) {
             val remMs = dep.targetDepartureEpochMs - nowMs
             if (remMs < -35_000L) {
-                null
+                anyChanged = true
+                continue
+            }
+            val newMin = computeLiveLeavingMinutes(dep.targetDepartureEpochMs, nowMs)
+            val newCatch = evaluateCatchability(dep.stopDistanceMeters, newMin)
+            if (newMin == dep.leavingInMin && newCatch == dep.catchability) {
+                updatedDeps.add(dep)
             } else {
-                val newMin = computeLiveLeavingMinutes(dep.targetDepartureEpochMs, nowMs)
-                val newCatch = evaluateCatchability(dep.stopDistanceMeters, newMin)
-                if (newMin == dep.leavingInMin && newCatch == dep.catchability) {
-                    dep
-                } else {
-                    dep.copy(
-                        leavingInMin = newMin,
-                        catchability = newCatch
-                    )
-                }
+                anyChanged = true
+                updatedDeps.add(dep.copy(leavingInMin = newMin, catchability = newCatch))
             }
         }
-        val updatedPrimary = res.primaryStop.copy(
-            walkingMinutes = computeWalkMinutes(res.primaryStop.distanceMeters)
-        )
-        val updatedCluster = res.clusterStops.map {
-            it.copy(walkingMinutes = computeWalkMinutes(it.distanceMeters))
+
+        if (!anyChanged && updatedDeps.size == res.departures.size) {
+            return res
         }
+
         return res.copy(
-            primaryStop = updatedPrimary,
-            clusterStops = updatedCluster,
             departures = updatedDeps
         )
     }
