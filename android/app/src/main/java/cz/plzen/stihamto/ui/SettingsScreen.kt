@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -171,6 +172,21 @@ fun SettingsScreen(
                     }
                 }
 
+                val spectrumBrush = remember {
+                    Brush.sweepGradient(
+                        listOf(
+                            Color(0xFFE53935), // červená
+                            Color(0xFFFB8C00), // oranžová
+                            Color(0xFFFDD835), // žlutá
+                            Color(0xFF43A047), // zelená
+                            Color(0xFF00ACC1), // azurová
+                            Color(0xFF1E88E5), // modrá
+                            Color(0xFF8E24AA), // fialová
+                            Color(0xFFE53935)  // zpět do červené
+                        )
+                    )
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -182,6 +198,12 @@ fun SettingsScreen(
                         val isSelected = colorTheme == item
                         val ringColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
 
+                        val backgroundModifier = if (item == AppColorTheme.DYNAMIC) {
+                            Modifier.background(spectrumBrush)
+                        } else {
+                            Modifier.background(item.primaryColor)
+                        }
+
                         Box(
                             modifier = Modifier
                                 .size(46.dp)
@@ -189,26 +211,17 @@ fun SettingsScreen(
                                 .border(2.5.dp, ringColor, CircleShape)
                                 .padding(4.dp)
                                 .clip(CircleShape)
-                                .background(
-                                    if (item == AppColorTheme.DYNAMIC) MaterialTheme.colorScheme.primary
-                                    else item.primaryColor
-                                )
+                                .then(backgroundModifier)
                                 .clickable { onColorThemeChange(item) },
                             contentAlignment = Alignment.Center
                         ) {
                             if (isSelected) {
                                 Box(
                                     modifier = Modifier
-                                        .size(10.dp)
+                                        .size(12.dp)
                                         .clip(CircleShape)
                                         .background(Color.White)
-                                )
-                            } else if (item == AppColorTheme.DYNAMIC) {
-                                Text(
-                                    text = "auto",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White.copy(alpha = 0.9f)
+                                        .border(1.dp, Color.Black.copy(alpha = 0.25f), CircleShape)
                                 )
                             }
                         }

@@ -235,8 +235,8 @@ private fun HomeTopBar(onGpsClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "ŽIVÉ ODJEZDY V OKOLÍ",
-                fontSize = 10.sp,
+                text = "To je oč tu běží",
+                fontSize = 11.sp,
                 letterSpacing = 1.4.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

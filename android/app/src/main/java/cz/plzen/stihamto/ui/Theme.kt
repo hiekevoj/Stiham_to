@@ -4,8 +4,11 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 enum class AppThemeMode(val title: String) {
     SYSTEM("Systém"),
@@ -14,8 +17,8 @@ enum class AppThemeMode(val title: String) {
 }
 
 enum class AppColorTheme(val title: String, val subtitle: String, val primaryColor: Color) {
-    BOTANICAL("Smaragd", "Originální šalvěj a les", Color(0xFF2C4C38)),
     DYNAMIC("Material You", "Dynamicky dle tapety (Android 12+)", Color(0xFF3F826D)),
+    BOTANICAL("Smaragd", "Originální šalvěj a les", Color(0xFF2C4C38)),
     PILSNER("Jantar", "Zlatavý jantar a med", Color(0xFFA06200)),
     TRAM_NIGHT("Noční linka", "Hluboké indigo a azur", Color(0xFF0F5B80)),
     RUBY("Rubín", "Karmín a teplé odstíny", Color(0xFF8B1E3F))
@@ -199,6 +202,18 @@ fun StihamToTheme(
         AppColorTheme.PILSNER -> if (isDark) PilsnerDark else PilsnerLight
         AppColorTheme.TRAM_NIGHT -> if (isDark) TramNightDark else TramNightLight
         AppColorTheme.RUBY -> if (isDark) RubyDark else RubyLight
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? android.app.Activity)?.window
+            if (window != null) {
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.isAppearanceLightStatusBars = !isDark
+                insetsController.isAppearanceLightNavigationBars = !isDark
+            }
+        }
     }
 
     MaterialTheme(

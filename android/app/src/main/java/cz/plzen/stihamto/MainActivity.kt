@@ -268,7 +268,7 @@ class MainActivity : AppCompatActivity() {
             val screenPadding = PaddingValues(
                 start = 20.dp,
                 end = 20.dp,
-                top = innerPadding.calculateTopPadding() + 8.dp,
+                top = innerPadding.calculateTopPadding() + 20.dp,
                 bottom = innerPadding.calculateBottomPadding() + 16.dp
             )
 
