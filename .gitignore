@@ -1,0 +1,36 @@
+# Operating System
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Android / Gradle
+.gradle/
+android/.gradle/
+**/build/
+android/.sdk/
+local.properties
+android/local.properties
+*.iml
+.idea/
+.vscode/
+.cxx/
+.externalNativeBuild/
+captures/
+
+# Logs & temp files
+*.log
+*.tmp
+
+# Root APK duplicate (tracked in public/StihamTo-Plzen.apk)
+/StihamTo-Plzen.apk

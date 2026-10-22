@@ -1,0 +1,10 @@
+{
+  "name": "stiham-to-plzen",
+  "version": "0.1.0",
+  "description": "PMDP Plzeň live MHD departures connector & Android lockscreen preview",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test:live": "node src/testLive.mjs"
+  }
+}
