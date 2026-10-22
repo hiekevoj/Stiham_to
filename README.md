@@ -17,8 +17,10 @@ Běžné aplikace zobrazují tabule jednotlivých sloupků nebo vyžadují zdlou
 1. **Chytrý uzel (Smart Clustering):** V místech jako *Sady Pětatřicátníků*, *CAN*, *U Práce* nebo *Hlavní nádraží* automaticky sloučí všechny zastávky v okruhu 250 m do jednoho přehledu a prioritizuje páteřní trakci (tramvaje).
 2. **Kalkulace stihnutelnosti:** Vypočítává přesnou pěší vzdálenost k označníku a porovnává ji s reálným zpožděním vozu. Okamžitě víte, zda spoj **stíháte v klidu**, **je potřeba zrychlit do kroku**, **musíte běžet**, nebo už **nemá smysl spěchat**.
 3. **Automatické probuzení (Smart Trigger):** Detekuje odchod z domova (odpojení od domácí Wi-Fi + rozpoznání chůze přes Activity Recognition) a automaticky zobrazí živou notifikaci na zamykací obrazovce.
-4. **Android Live Notifikace & Widget:** Připnutá notifikace na zamykací obrazovce s interaktivními tlačítky pro filtr trakce a domovský widget s živými odjezdy.
-5. **Nulová závislost na externích placených mapách:** Kalibrovaný offline pěší model pro Plzeň namísto nestabilních veřejných routerů.
+4. **Jetpack Compose & Material 3:** Moderní deklarativní UI s podporou dynamického přebarvování podle tapety (Material You na Androidu 12+) i plnohodnotným Dark Mode.
+5. **Přímé aktualizace z GitHubu (In-App Updater):** Aplikace umí v Nastavení přímo zkontrolovat novou verzi na GitHubu, stáhnout APK a spustit aktualizaci bez nutnosti Google Play Store.
+6. **Android Live Notifikace & Widget:** Připnutá notifikace na zamykací obrazovce s interaktivními tlačítky pro filtr trakce a domovský widget s živými odjezdy.
+7. **Nulová závislost na externích placených mapách:** Kalibrovaný offline pěší model pro Plzeň namísto nestabilních veřejných routerů.
 
 ---
 

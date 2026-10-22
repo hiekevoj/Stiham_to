@@ -32,6 +32,7 @@ import cz.plzen.stihamto.ui.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -48,6 +49,7 @@ class MainActivity : ComponentActivity() {
     private val searchQueryState = mutableStateOf("")
     private val searchResultsState = mutableStateOf<List<PmdpStop>>(emptyList())
     private val dynamicColorState = mutableStateOf(true)
+    private val updateUiState = mutableStateOf<UpdateUiState>(UpdateUiState.Idle)
 
     // Nastavení
     private val walkSpeedState = mutableStateOf("normal")
@@ -364,9 +366,50 @@ class MainActivity : ComponentActivity() {
                                 .putBoolean("dynamic_color", enabled)
                                 .apply()
                         },
+                        updateState = updateUiState.value,
+                        onCheckForUpdates = { checkForAppUpdate() },
+                        onDownloadAndInstall = { info -> downloadAndInstallUpdate(info) },
+                        onInstallDownloaded = { file ->
+                            try {
+                                AppUpdateManager.startInstall(this@MainActivity, file)
+                            } catch (e: Exception) {
+                                Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+                            }
+                        },
                         appVersion = vName
                     )
                 }
+            }
+        }
+    }
+
+    private fun checkForAppUpdate() {
+        updateUiState.value = UpdateUiState.Checking
+        lifecycleScope.launch {
+            try {
+                val result = AppUpdateManager.checkForUpdates(this@MainActivity)
+                if (result.isUpdateAvailable) {
+                    updateUiState.value = UpdateUiState.UpdateAvailable(result)
+                } else {
+                    updateUiState.value = UpdateUiState.UpToDate(result.currentVersionName)
+                }
+            } catch (e: Exception) {
+                updateUiState.value = UpdateUiState.Error(e.message ?: "Chyba při komunikaci s GitHubem")
+            }
+        }
+    }
+
+    private fun downloadAndInstallUpdate(info: UpdateCheckResult) {
+        updateUiState.value = UpdateUiState.Downloading(0.01f)
+        lifecycleScope.launch {
+            try {
+                val file = AppUpdateManager.downloadApk(this@MainActivity, info.apkUrl) { progress ->
+                    updateUiState.value = UpdateUiState.Downloading(progress)
+                }
+                updateUiState.value = UpdateUiState.ReadyToInstall(file)
+                AppUpdateManager.startInstall(this@MainActivity, file)
+            } catch (e: Exception) {
+                updateUiState.value = UpdateUiState.Error(e.message ?: "Chyba při stahování APK")
             }
         }
     }

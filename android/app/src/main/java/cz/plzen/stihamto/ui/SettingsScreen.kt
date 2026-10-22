@@ -18,6 +18,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cz.plzen.stihamto.UpdateCheckResult
+import java.io.File
+
+sealed class UpdateUiState {
+    object Idle : UpdateUiState()
+    object Checking : UpdateUiState()
+    data class UpToDate(val version: String) : UpdateUiState()
+    data class UpdateAvailable(val info: UpdateCheckResult) : UpdateUiState()
+    data class Downloading(val progress: Float) : UpdateUiState()
+    data class ReadyToInstall(val file: File) : UpdateUiState()
+    data class Error(val message: String) : UpdateUiState()
+}
 
 data class SystemDiagState(
     val hasLoc: Boolean,
@@ -61,6 +73,10 @@ fun SettingsScreen(
     onOpenBatterySettings: () -> Unit,
     dynamicColorEnabled: Boolean,
     onDynamicColorToggle: (Boolean) -> Unit,
+    updateState: UpdateUiState,
+    onCheckForUpdates: () -> Unit,
+    onDownloadAndInstall: (UpdateCheckResult) -> Unit,
+    onInstallDownloaded: (File) -> Unit,
     appVersion: String
 ) {
     var globalHelpExpanded by remember { mutableStateOf(false) }
@@ -320,6 +336,20 @@ fun SettingsScreen(
                     showHelp = globalHelpExpanded,
                     onRequestPermissions = onRequestPermissions,
                     onOpenBatterySettings = onOpenBatterySettings
+                )
+            }
+        }
+
+        // === SEKCE 6: AKTUALIZACE A GITHUB ===
+        item { SectionLabel("AKTUALIZACE A GITHUB") }
+        item {
+            SettingsCard {
+                AppUpdateBlock(
+                    currentVersion = appVersion,
+                    updateState = updateState,
+                    onCheck = onCheckForUpdates,
+                    onDownload = onDownloadAndInstall,
+                    onInstall = onInstallDownloaded
                 )
             }
         }
@@ -855,6 +885,234 @@ private fun SystemDiagBlock(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppUpdateBlock(
+    currentVersion: String,
+    updateState: UpdateUiState,
+    onCheck: () -> Unit,
+    onDownload: (UpdateCheckResult) -> Unit,
+    onInstall: (File) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Aktualizace aplikace",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "v$currentVersion",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Text(
+            text = "Aplikace se synchronizuje přímo s repozitářem na GitHubu a umí se sama aktualizovat bez nutnosti Google Play.",
+            fontSize = 12.5.sp,
+            lineHeight = 17.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+        )
+
+        when (updateState) {
+            is UpdateUiState.Idle -> {
+                Button(
+                    onClick = onCheck,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text(
+                        text = "⚡ Zkontrolovat aktualizace z GitHubu",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            }
+
+            is UpdateUiState.Checking -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Ověřuji novou verzi na GitHubu…",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            is UpdateUiState.UpToDate -> {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFE2EFE6))
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "✓ Máte nejnovější verzi (${updateState.version})",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF255238)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    TextButton(
+                        onClick = onCheck,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    ) {
+                        Text("Zkontrolovat znovu", fontSize = 12.sp)
+                    }
+                }
+            }
+
+            is UpdateUiState.UpdateAvailable -> {
+                val info = updateState.info
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(14.dp)
+                ) {
+                    Text(
+                        text = "🎉 K dispozici je verze ${info.latestVersionName}!",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    if (info.releaseNotes.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = info.releaseNotes,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { onDownload(info) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text(
+                            text = "⬇ Stáhnout a nainstalovat",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+            }
+
+            is UpdateUiState.Downloading -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(14.dp)
+                ) {
+                    val percent = (updateState.progress * 100).toInt()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Stahuji APK z GitHubu…",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "$percent %",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { updateState.progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surface
+                    )
+                }
+            }
+
+            is UpdateUiState.ReadyToInstall -> {
+                Button(
+                    onClick = { onInstall(updateState.file) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text(
+                        text = "📦 Spustit instalaci aktualizace",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            }
+
+            is UpdateUiState.Error -> {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFF4E3E0))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            text = "Chyba při stahování: ${updateState.message}",
+                            fontSize = 12.5.sp,
+                            color = Color(0xFF963A2F)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Button(
+                        onClick = onCheck,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text("Zkusit znovu", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onPrimary)
+                    }
+                }
             }
         }
     }
