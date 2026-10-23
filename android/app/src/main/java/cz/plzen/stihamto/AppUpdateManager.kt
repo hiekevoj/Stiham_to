@@ -83,7 +83,7 @@ object AppUpdateManager {
             @Suppress("DEPRECATION")
             pInfo.versionCode
         }
-        val currentName = pInfo.versionName ?: "0.1.0"
+        val currentName = pInfo.versionName ?: "0.1.1"
 
         var latestFoundCode = currentCode
         var latestFoundName = currentName
@@ -127,12 +127,11 @@ object AppUpdateManager {
 
                 if (tagName.isNotEmpty()) {
                     val isTagNewer = isNewerVersion(tagName, currentName)
-                    val numericCode = tagName.filter { it.isDigit() }.toIntOrNull() ?: currentCode
 
-                    if (isTagNewer || numericCode > currentCode) {
+                    if (isTagNewer) {
                         hasNewer = true
                         latestFoundName = tagName
-                        latestFoundCode = maxOf(currentCode + 1, numericCode)
+                        latestFoundCode = currentCode + 1
                         releaseNotes = notes.ifEmpty { "Nová verze $tagName na GitHub Releases" }
                         apkDownloadUrl = assetApkUrl ?: FALLBACK_DIRECT_APK_URL
                     }
@@ -278,6 +277,15 @@ object AppUpdateManager {
 
         if (!targetFile.exists() || targetFile.length() < 100_000L) {
             throw IllegalStateException("Stažený APK soubor je nekompletní nebo poškozený (${targetFile.length()} B).")
+        }
+
+        // Ověření integrity ZIP / APK hlavičky (magic bytes: 0x50, 0x4B, 0x03, 0x04)
+        val header = ByteArray(4)
+        java.io.FileInputStream(targetFile).use { it.read(header) }
+        val isZip = header[0] == 0x50.toByte() && header[1] == 0x4B.toByte() && header[2] == 0x03.toByte() && header[3] == 0x04.toByte()
+        if (!isZip) {
+            targetFile.delete()
+            throw IllegalStateException("Stažený soubor není platný instalační balíček Android (APK).")
         }
 
         targetFile

@@ -435,7 +435,7 @@ fun SettingsScreen(
                                 onClick = onClearFavoriteLines,
                                 modifier = Modifier.align(Alignment.CenterHorizontally)
                             ) {
-                                Text("Zrušit všechny prioritní linky", color = Color(0xFF963A2F), fontSize = 12.sp)
+                                Text("Zrušit všechny prioritní linky", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                             }
                         }
                     }
@@ -528,7 +528,7 @@ fun SettingsScreen(
                                         Text(
                                             text = "Odebrat",
                                             fontSize = 11.5.sp,
-                                            color = Color(0xFF963A2F),
+                                            color = MaterialTheme.colorScheme.error,
                                             modifier = Modifier
                                                 .clickable { onRemoveHomeWifi(ssid) }
                                                 .padding(4.dp)
@@ -932,7 +932,7 @@ private fun AppUpdateBlock(
                     Text(
                         text = "Chyba: ${updateState.message}",
                         fontSize = 12.sp,
-                        color = Color(0xFF963A2F)
+                        color = MaterialTheme.colorScheme.error
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Button(

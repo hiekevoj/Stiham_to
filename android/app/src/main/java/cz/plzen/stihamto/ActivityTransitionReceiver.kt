@@ -69,12 +69,46 @@ class ActivityTransitionReceiver : BroadcastReceiver() {
             if (LiveDeparturesService.isRunning) {
                 context.startService(serviceIntent)
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
+                try {
+                    context.startForegroundService(serviceIntent)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Foreground service nelze spustit přímo z pozadí (Android 12+ restrikce): ${e.message}")
+                    if (actionStr == LiveDeparturesService.ACTION_WALK_DETECTED) {
+                        notifyFallbackToUser(context)
+                    }
+                }
             } else {
                 context.startService(serviceIntent)
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Chyba při předání akce do LiveDeparturesService: ${e.message}")
+        }
+    }
+
+    private fun notifyFallbackToUser(context: Context) {
+        try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
+            val openAppIntent = android.app.PendingIntent.getActivity(
+                context,
+                0,
+                Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notif = androidx.core.app.NotificationCompat.Builder(context, LiveDeparturesService.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notif_transit)
+                .setColor(android.graphics.Color.parseColor("#2C4C38"))
+                .setContentTitle("Stíhám to? · Zjistit odjezdy")
+                .setContentText("Detekována chůze – klepnutím zobrazíte nejbližší odjezdy MHD")
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(openAppIntent)
+                .setAutoCancel(true)
+                .build()
+
+            nm.notify(LiveDeparturesService.NOTIFICATION_ID, notif)
+        } catch (_: Throwable) {
         }
     }
 

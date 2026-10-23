@@ -1266,7 +1266,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
                 }
                 val delayNote = if (d.delayMin != null && d.delayMin >= 2) " (+${d.delayMin}m)" else ""
                 val originPart = if (isMulti && d.stopCis != res.primaryStop.stop.cisNumber) " · ${d.stopName}" else ""
-                "${d.lineName}  ${d.destination}   —   $inText$delayNote  ·  ${d.catchability.label}$originPart"
+                "$inText (${d.catchability.label}) — ${d.lineName} → ${d.destination}$delayNote$originPart"
             }
         }
 
@@ -1473,7 +1473,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
         stopStandbyOutdoorWatch()
         stopLocationUpdates()
         releaseWalkingWakeLock()
-        ActivityTransitionManager.unregisterTransitions(this)
+        // Ponecháváme ActivityTransitionManager aktivní, aby systém mohl aplikaci automaticky znovu probudit při chůzi
         sendBroadcast(Intent(BROADCAST_LIVE_UPDATE).setPackage(packageName))
         super.onDestroy()
     }

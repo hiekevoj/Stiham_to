@@ -274,6 +274,7 @@ class MainActivity : AppCompatActivity() {
 
             HorizontalPager(
                 state = pagerState,
+                userScrollEnabled = false,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 if (page == 0) {
@@ -339,7 +340,7 @@ class MainActivity : AppCompatActivity() {
                     val vName = try {
                         packageManager.getPackageInfo(packageName, 0).versionName
                     } catch (_: Exception) {
-                        "0.1.0"
+                        "0.1.1"
                     }
 
                     SettingsScreen(

@@ -16,7 +16,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             if (event.hasError()) return
 
             // 1. Pokud jsme připojeni na domácí/pracovní Wi-Fi, Geofence u zastávky ignorujeme!
-            if (PmdpRepository.isSleepOnWifiEnabled(context) && SmartTriggerMonitor.isConnectedToWifi(context)) {
+            if (PmdpRepository.isSleepOnWifiEnabled(context) && SmartTriggerMonitor.isConnectedToHomeWifi(context)) {
                 return
             }
 
@@ -50,7 +50,11 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                         if (LiveDeparturesService.isRunning) {
                             context.startService(serviceIntent)
                         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            context.startForegroundService(serviceIntent)
+                            try {
+                                context.startForegroundService(serviceIntent)
+                            } catch (_: Throwable) {
+                                notifyUserNearStop(context)
+                            }
                         } else {
                             context.startService(serviceIntent)
                         }
@@ -58,6 +62,33 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     }
                 }
             }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun notifyUserNearStop(context: Context) {
+        try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
+            val openAppIntent = android.app.PendingIntent.getActivity(
+                context,
+                0,
+                Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notif = androidx.core.app.NotificationCompat.Builder(context, LiveDeparturesService.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notif_transit)
+                .setColor(android.graphics.Color.parseColor("#2C4C38"))
+                .setContentTitle("Jste u zastávky MHD")
+                .setContentText("Klepnutím zobrazíte odjezdy nejbližších spojů")
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(openAppIntent)
+                .setAutoCancel(true)
+                .build()
+
+            nm.notify(LiveDeparturesService.NOTIFICATION_ID, notif)
         } catch (_: Throwable) {
         }
     }

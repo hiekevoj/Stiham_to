@@ -4,7 +4,7 @@
 
 [![Platform](https://img.shields.io/badge/Platform-Android-brightgreen.svg)]()
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.24-blue.svg)]()
-[![Version](https://img.shields.io/badge/Version-0.1.0-blue.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.1.1-blue.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)]()
 
 ---

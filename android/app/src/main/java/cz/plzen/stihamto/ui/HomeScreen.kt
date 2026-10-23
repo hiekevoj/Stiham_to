@@ -4,9 +4,11 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -198,7 +201,45 @@ fun HomeScreen(
                 }
             }
 
-            if (validDeps.isEmpty()) {
+            val isFarAway = result.primaryStop.distanceMeters > 18_000
+            if (isFarAway) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_gps),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Jste mimo oblast pokrytí Plzně",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Aplikace Stíhám to? vyhodnocuje spoje MHD v Plzni a příměstských linkách PMDP. Nejbližší zastávka je vzdálena ${result.primaryStop.distanceMeters / 1000} km (${result.primaryStop.stop.name}).",
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            } else if (validDeps.isEmpty()) {
                 item {
                     Text(
                         text = "V nejbližší době neodjíždí žádný spoj zvoleného filtru.",
@@ -208,7 +249,10 @@ fun HomeScreen(
                     )
                 }
             } else {
-                items(validDeps, key = { "${it.lineName}_${it.targetDepartureEpochMs}_${it.destination}_${it.stopCis}" }) { dep ->
+                itemsIndexed(
+                    validDeps,
+                    key = { index, dep -> "${dep.lineName}_${dep.targetDepartureEpochMs}_${dep.destination}_${dep.stopCis}_${dep.scheduledHHMM}_$index" }
+                ) { _, dep ->
                     DepartureCard(
                         departure = dep,
                         onToggleFavorite = { onToggleFavoriteLine(dep.lineName) }
@@ -520,7 +564,7 @@ private fun SearchStopsBlock(
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { onQueryChange("") }) {
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_search),
+                            painter = painterResource(id = R.drawable.ic_close),
                             contentDescription = "Vymazat",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
@@ -675,18 +719,26 @@ private fun DepartureCard(
 ) {
     val isMissed = departure.catchability.status == "missed"
     val cardAlpha = if (isMissed) 0.58f else 1.0f
+    val isDark = isSystemInDarkTheme()
 
     val (badgeBg, badgeFg, typeLabel) = when {
-        departure.isNight -> Triple(Color(0xFF2B303A), Color(0xFFF6F5F0), "NOC")
-        departure.tractionType == 1 -> Triple(Color(0xFFF3E5AB), Color(0xFF3A2E11), "TRAM")
-        departure.tractionType == 2 -> Triple(Color(0xFFDCEBE1), Color(0xFF1E462E), "TROL")
-        else -> Triple(Color(0xFFF5E1DC), Color(0xFF6E291D), "BUS")
+        departure.isNight -> if (isDark) Triple(Color(0xFF263238), Color(0xFFECEFF1), "NOC")
+                             else Triple(Color(0xFF2B303A), Color(0xFFF6F5F0), "NOC")
+        departure.tractionType == 1 -> if (isDark) Triple(Color(0xFF4A3E1C), Color(0xFFFFE082), "TRAM")
+                                       else Triple(Color(0xFFF3E5AB), Color(0xFF3A2E11), "TRAM")
+        departure.tractionType == 2 -> if (isDark) Triple(Color(0xFF1E3A29), Color(0xFFA5D6A7), "TROL")
+                                       else Triple(Color(0xFFDCEBE1), Color(0xFF1E462E), "TROL")
+        else -> if (isDark) Triple(Color(0xFF4E2620), Color(0xFFFFAB91), "BUS")
+                else Triple(Color(0xFFF5E1DC), Color(0xFF6E291D), "BUS")
     }
 
     val (catchBg, catchFg) = when (departure.catchability.status) {
-        "comfortable" -> Color(0xFFE2EFE6) to Color(0xFF255238)
-        "hurry" -> Color(0xFFF6EAD4) to Color(0xFF8F5812)
-        else -> Color(0xFFF4E3E0) to Color(0xFF963A2F)
+        "comfortable" -> if (isDark) Color(0xFF1B3B2B) to Color(0xFFA5D6A7)
+                         else Color(0xFFE2EFE6) to Color(0xFF255238)
+        "hurry" -> if (isDark) Color(0xFF422C0B) to Color(0xFFFFD54F)
+                   else Color(0xFFF6EAD4) to Color(0xFF8F5812)
+        else -> if (isDark) Color(0xFF421C18) to Color(0xFFEF9A9A)
+                else Color(0xFFF4E3E0) to Color(0xFF963A2F)
     }
 
     Card(
@@ -767,9 +819,9 @@ private fun DepartureCard(
                 }
                 val delayColor = when {
                     departure.delayMin == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                    departure.delayMin == 0 -> Color(0xFF2E7D32)
-                    departure.delayMin > 2 -> Color(0xFFC62828)
-                    else -> Color(0xFFE65100)
+                    departure.delayMin == 0 -> if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32)
+                    departure.delayMin > 2 -> if (isDark) Color(0xFFE57373) else Color(0xFFC62828)
+                    else -> if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100)
                 }
 
                 Spacer(modifier = Modifier.height(2.dp))
@@ -810,22 +862,34 @@ private fun DepartureCard(
                         )
                     }
 
-                    if (departure.isFavorite) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { onToggleFavorite() }
-                                .padding(horizontal = 9.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = "Prioritní",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Medium
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (departure.isFavorite) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                             )
-                        }
+                            .clickable { onToggleFavorite() }
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(
+                                id = if (departure.isFavorite) R.drawable.ic_star_filled else R.drawable.ic_star_outline
+                            ),
+                            contentDescription = if (departure.isFavorite) "Odebrat z oblíbených" else "Přidat do oblíbených",
+                            tint = if (departure.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (departure.isFavorite) "Oblíbená" else "Uložit",
+                            color = if (departure.isFavorite) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
             }
@@ -842,8 +906,11 @@ private fun DepartureCard(
                     departure.leavingInMin == 0 -> "teď"
                     else -> "${departure.leavingInMin} min"
                 }
-                val leavingColor = if (departure.leavingInMin < 0) Color(0xFF963A2F)
-                else MaterialTheme.colorScheme.onSurface
+                val leavingColor = if (departure.leavingInMin < 0) {
+                    if (isDark) Color(0xFFE57373) else Color(0xFF963A2F)
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
 
                 Text(
                     text = leavingText,

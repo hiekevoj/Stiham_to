@@ -362,7 +362,7 @@ object PmdpRepository {
         if (clean.isEmpty() || isDisallowedPublicSsid(clean)) return false
         val homes = getHomeWifiSsids(context)
         return if (homes.isEmpty()) {
-            !isDisallowedPublicSsid(clean)
+            false
         } else {
             homes.contains(clean)
         }
@@ -541,6 +541,17 @@ object PmdpRepository {
             )
         }
 
+        // 3. Tolerance pro těsnou blízkost zastávky (např. přechod před sloupkem, 46-80 m):
+        // Pokud vůz právě přijíždí/stojí v zastávce (leavingInMin == 0), uživatel ho dobíhá,
+        // spoj se dá stihnout zrychlením kroku a nesmí být označen jako "Nestíháš"
+        if (distanceMeters <= 80 && leavingInMin == 0) {
+            return Catchability(
+                status = "hurry",
+                label = "Pospěš si",
+                walkMinutes = 1
+            )
+        }
+
         val bufferMin = activeCrosswalkBufferSec / 60.0
         val fastWalkMin = (distanceMeters / activeFastWalkMetersPerMin) + (bufferMin * 0.5)
         val walkMinRounded = max(1, normalWalkMin.roundToInt())
@@ -662,19 +673,23 @@ object PmdpRepository {
             )
         }
 
-        val setCookies = conn.headerFields["Set-Cookie"] ?: conn.headerFields["set-cookie"] ?: emptyList()
-        val cookieParts = setCookies.map { it.substringBefore(";").trim() }.filter { it.isNotEmpty() }
-        if (cookieParts.isNotEmpty()) {
-            sessionCookie = cookieParts.joinToString("; ")
+        try {
+            val setCookies = conn.headerFields["Set-Cookie"] ?: conn.headerFields["set-cookie"] ?: emptyList()
+            val cookieParts = setCookies.map { it.substringBefore(";").trim() }.filter { it.isNotEmpty() }
+            if (cookieParts.isNotEmpty()) {
+                sessionCookie = cookieParts.joinToString("; ")
+            }
+
+            val html = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+            val regex = Regex("""name=['"]X-API-Request-Verification-Token['"]\s+value=['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
+            val match = regex.find(html)
+                ?: throw IllegalStateException("Nepodařilo se získat bezpečnostní token z jizdnirady.pmdp.cz")
+
+            verificationToken = match.groupValues[1]
+            tokenTimestampMs = System.currentTimeMillis()
+        } finally {
+            conn.disconnect()
         }
-
-        val html = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
-        val regex = Regex("""name=['"]X-API-Request-Verification-Token['"]\s+value=['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
-        val match = regex.find(html)
-            ?: throw IllegalStateException("Nepodařilo se získat bezpečnostní token z jizdnirady.pmdp.cz")
-
-        verificationToken = match.groupValues[1]
-        tokenTimestampMs = System.currentTimeMillis()
     }
 
     private fun postStopDeparturesJson(stop: PmdpStop, maxResults: Int = 12, isRetry: Boolean = false): JSONArray {
@@ -710,21 +725,26 @@ object PmdpRepository {
             sessionCookie?.let { setRequestProperty("Cookie", it) }
         }
 
-        OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
-            writer.write(payload.toString())
-            writer.flush()
-        }
-
-        val code = conn.responseCode
-        if (code != 200) {
-            if (!isRetry && (code == 400 || code == 401 || code == 403 || code == 500)) {
-                return postStopDeparturesJson(stop, maxResults, true)
+        try {
+            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
+                writer.write(payload.toString())
+                writer.flush()
             }
-            throw IllegalStateException("Server vrátil HTTP $code")
-        }
 
-        val responseBody = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
-        return JSONArray(responseBody)
+            val code = conn.responseCode
+            if (code != 200) {
+                try { conn.errorStream?.close() } catch (_: Throwable) {}
+                if (!isRetry && (code == 400 || code == 401 || code == 403 || code == 500)) {
+                    return postStopDeparturesJson(stop, maxResults, true)
+                }
+                throw IllegalStateException("Server PMDP vrátil HTTP $code")
+            }
+
+            val responseBody = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+            return JSONArray(responseBody)
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private fun parseDeparturesArray(
@@ -856,7 +876,7 @@ object PmdpRepository {
                     set(java.util.Calendar.MILLISECOND, 0)
                 }
                 val parsedMs = cal.timeInMillis + ((delayMin ?: 0) * 60_000L)
-                if (abs(parsedMs - fallbackEpoch) <= 1_800_000L) {
+                if (abs(parsedMs - fallbackEpoch) <= 7_200_000L) {
                     return parsedMs
                 }
             } catch (_: Exception) {
@@ -978,21 +998,29 @@ object PmdpRepository {
             )
         }
 
-        val perStopLists = coroutineScope {
+        val perStopResults = coroutineScope {
             clusterStops.map { rankedStop ->
                 async {
                     try {
                         val raw = postStopDeparturesJson(rankedStop.stop, maxResults = 12)
-                        parseDeparturesArray(raw, rankedStop, favLines)
+                        Pair(parseDeparturesArray(raw, rankedStop, favLines), null)
                     } catch (e: Exception) {
                         android.util.Log.e("PmdpRepository", "Chyba načítání odjezdů pro ${rankedStop.stop.name}: ${e.message}")
-                        emptyList()
+                        Pair(emptyList<LiveDeparture>(), e)
                     }
                 }
             }.awaitAll()
         }
 
-        var merged = perStopLists.flatten()
+        // Pokud všechny dotazy na zastávky v klastru selhaly na chybě sítě/serveru, vyhodíme výjimku
+        val allFailed = perStopResults.isNotEmpty() && perStopResults.all { it.second != null }
+        if (allFailed) {
+            val primaryErr = perStopResults.firstNotNullOfOrNull { it.second }
+                ?: java.io.IOException("Nepodařilo se připojit k serveru PMDP")
+            throw primaryErr
+        }
+
+        var merged = perStopResults.flatMap { it.first }
 
         // Filtr podle preferované trakce: "all", "tram" (jen tramvaje), "bus_trol" (autobusy + trolejbusy)
         merged = when (preferredTraction) {
@@ -1007,6 +1035,7 @@ object PmdpRepository {
         // 3) Čas do odjezdu (leavingInMin)
         val sorted = merged.sortedWith(
             compareByDescending<LiveDeparture> { it.catchability.status != "missed" && it.isFavorite }
+                .thenByDescending { it.catchability.status != "missed" }
                 .thenBy { if (it.leavingInMin < 0) 999 else it.leavingInMin }
         )
 

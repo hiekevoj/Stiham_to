@@ -61,71 +61,94 @@ object SmartTriggerMonitor {
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
 
+        fun handleWifiAvailable() {
+            currentlyOnWifi = true
+            val ssid = getConnectedWifiSsid(appCtx)
+            val isHome = PmdpRepository.isHomeWifi(appCtx, ssid)
+
+            // Pokud síť NENÍ na seznamu povolených domácích/pracovních sítí
+            // (např. PMDP-Free v tramvaji), službu NIKDY neuspáváme!
+            if (!isHome) {
+                return
+            }
+
+            // Při připojení na ověřenou domácí Wi-Fi přepneme službu do tichého spánku (Standby),
+            // aby ze zamykací obrazovky zmizela a nebrala GPS, ale krokoměr dál hlídal odchod.
+            if (PmdpRepository.isSleepOnWifiEnabled(appCtx) &&
+                LiveDeparturesService.isRunning &&
+                !LiveDeparturesService.isSleepingStandby &&
+                !LiveDeparturesService.isManualForceOnWifi &&
+                !LiveDeparturesService.isWalkingWifiOverrideActive()
+            ) {
+                val sleepReason = if (!ssid.isNullOrEmpty()) {
+                    "Uspáno (připojeno k Wi-Fi: $ssid)"
+                } else {
+                    "Uspáno (připojeno k domácí Wi-Fi)"
+                }
+                val sleepIntent = Intent(appCtx, LiveDeparturesService::class.java).apply {
+                    action = LiveDeparturesService.ACTION_SLEEP_STANDBY
+                    putExtra("sleep_reason", sleepReason)
+                }
+                try {
+                    appCtx.startService(sleepIntent)
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        fun handleWifiLost() {
+            val wasWifi = currentlyOnWifi
+            currentlyOnWifi = isConnectedToWifi(appCtx)
+            // Jakmile se telefon odpojí od Wi-Fi (vypnutí Wi-Fi nebo odchod z bytu na mobilní data),
+            // okamžitě probudíme notifikaci na zamykací obrazovce!
+            if (wasWifi && !currentlyOnWifi) {
+                PmdpRepository.clearAutoSleptLocation(appCtx)
+                val wakeIntent = Intent(appCtx, LiveDeparturesService::class.java).apply {
+                    action = LiveDeparturesService.ACTION_WAKE_UP
+                    putExtra("trigger_reason", "Odpojeno od Wi-Fi")
+                }
+                try {
+                    if (LiveDeparturesService.isRunning) {
+                        appCtx.startService(wakeIntent)
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            appCtx.startForegroundService(wakeIntent)
+                        } catch (e: Throwable) {
+                            android.util.Log.w("SmartTriggerMonitor", "FGS nelze spustit z pozadí: ${e.message}")
+                        }
+                    } else {
+                        appCtx.startService(wakeIntent)
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+        }
+
         try {
-            cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    currentlyOnWifi = true
-                    val ssid = getConnectedWifiSsid(appCtx)
-                    val isHome = PmdpRepository.isHomeWifi(appCtx, ssid)
-
-                    // Pokud síť NENÍ na seznamu povolených domácích/pracovních sítí
-                    // (např. PMDP-Free v tramvaji), službu NIKDY neuspáváme!
-                    if (!isHome) {
-                        return
+            val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                object : ConnectivityManager.NetworkCallback(FLAG_INCLUDE_LOCATION_INFO) {
+                    override fun onAvailable(network: Network) {
+                        handleWifiAvailable()
                     }
-
-                    // Při připojení na ověřenou domácí Wi-Fi přepneme službu do tichého spánku (Standby),
-                    // aby ze zamykací obrazovky zmizela a nebrala GPS, ale krokoměr dál hlídal odchod.
-                    if (PmdpRepository.isSleepOnWifiEnabled(appCtx) &&
-                        LiveDeparturesService.isRunning &&
-                        !LiveDeparturesService.isSleepingStandby &&
-                        !LiveDeparturesService.isManualForceOnWifi &&
-                        !LiveDeparturesService.isWalkingWifiOverrideActive()
-                    ) {
-                        val sleepReason = if (!ssid.isNullOrEmpty()) {
-                            "Uspáno (připojeno k Wi-Fi: $ssid)"
-                        } else {
-                            "Uspáno (připojeno k domácí Wi-Fi)"
-                        }
-                        val sleepIntent = Intent(appCtx, LiveDeparturesService::class.java).apply {
-                            action = LiveDeparturesService.ACTION_SLEEP_STANDBY
-                            putExtra("sleep_reason", sleepReason)
-                        }
-                        try {
-                            appCtx.startService(sleepIntent)
-                        } catch (_: Exception) {
-                        }
+                    override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                        handleWifiAvailable()
+                    }
+                    override fun onLost(network: Network) {
+                        handleWifiLost()
                     }
                 }
-
-                override fun onLost(network: Network) {
-                    val wasWifi = currentlyOnWifi
-                    currentlyOnWifi = isConnectedToWifi(appCtx)
-                    // Jakmile se telefon odpojí od Wi-Fi (vypnutí Wi-Fi nebo odchod z bytu na mobilní data),
-                    // okamžitě probudíme notifikaci na zamykací obrazovce!
-                    if (wasWifi && !currentlyOnWifi) {
-                        PmdpRepository.clearAutoSleptLocation(appCtx)
-                        val wakeIntent = Intent(appCtx, LiveDeparturesService::class.java).apply {
-                            action = LiveDeparturesService.ACTION_WAKE_UP
-                            putExtra("trigger_reason", "Odpojeno od Wi-Fi")
-                        }
-                        try {
-                            if (LiveDeparturesService.isRunning) {
-                                appCtx.startService(wakeIntent)
-                            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                try {
-                                    appCtx.startForegroundService(wakeIntent)
-                                } catch (e: Throwable) {
-                                    android.util.Log.w("SmartTriggerMonitor", "FGS nelze spustit z pozadí: ${e.message}")
-                                }
-                            } else {
-                                appCtx.startService(wakeIntent)
-                            }
-                        } catch (_: Throwable) {
-                        }
+            } else {
+                object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        handleWifiAvailable()
+                    }
+                    override fun onLost(network: Network) {
+                        handleWifiLost()
                     }
                 }
-            })
+            }
+
+            cm.registerNetworkCallback(request, callback)
             isRegistered = true
         } catch (_: Exception) {
         }
