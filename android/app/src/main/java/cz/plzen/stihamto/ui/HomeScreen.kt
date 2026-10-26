@@ -4,27 +4,32 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cz.plzen.stihamto.LiveDeparture
@@ -32,6 +37,7 @@ import cz.plzen.stihamto.LiveDeparturesResult
 import cz.plzen.stihamto.PmdpStop
 import cz.plzen.stihamto.R
 import cz.plzen.stihamto.RankedStop
+import kotlinx.coroutines.delay
 
 data class HeroState(
     val isRunning: Boolean,
@@ -41,6 +47,7 @@ data class HeroState(
     val actionText: String
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     result: LiveDeparturesResult?,
@@ -69,196 +76,221 @@ fun HomeScreen(
         if (result == null) emptyList()
         else {
             val nowMs = System.currentTimeMillis()
-            result.departures.filter { dep ->
-                val remMs = dep.targetDepartureEpochMs - nowMs
-                remMs >= -25_000L
-            }
+            result.departures
+                .filter { dep ->
+                    val remMs = dep.targetDepartureEpochMs - nowMs
+                    remMs >= -25_000L
+                }
+                .distinctBy { "${it.lineName}_${it.targetDepartureEpochMs}_${it.destination}_${it.stopCis}_${it.scheduledHHMM}" }
         }
     }
 
-    LazyColumn(
+    val pullRefreshState = rememberPullToRefreshState()
+    if (pullRefreshState.isRefreshing) {
+        LaunchedEffect(true) {
+            onRetry()
+            delay(500)
+            pullRefreshState.endRefresh()
+        }
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .background(MaterialTheme.colorScheme.background)
+            .nestedScroll(pullRefreshState.nestedScrollConnection)
     ) {
-        // 1. Editorial Header
-        item {
-            HomeTopBar(onGpsClick = onGpsClick)
-        }
-
-        // 2. Chybějící oprávnění (zobrazí se pouze při chybějících právech)
-        if (hasMissingPermissions) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // 1. Editorial Header
             item {
-                PermissionWarningCard(onRequestPermissions = onRequestPermissions)
+                HomeTopBar(onGpsClick = onGpsClick)
             }
-        }
 
-        // 3. Hero karta stavu pozadí
-        item {
-            HeroCard(
-                heroState = heroState,
-                onHeroToggle = onHeroToggle,
-                onHeroStop = onHeroStop
-            )
-        }
+            // 2. Chybějící oprávnění (zobrazí se pouze při chybějících právech)
+            if (hasMissingPermissions) {
+                item {
+                    PermissionWarningCard(onRequestPermissions = onRequestPermissions)
+                }
+            }
 
-        // 4. Filtry dopravy (Vše, Tram, Bus/Trol) a Chytrý uzel
-        item {
-            TransportFilterSection(
-                selectedTraction = selectedTraction,
-                isMultiStop = isMultiStop,
-                onSelectTraction = onSelectTraction,
-                onToggleMultiStop = onToggleMultiStop
-            )
-        }
-
-        // 5. Hledání zastávky
-        item {
-            SearchStopsBlock(
-                query = searchQuery,
-                searchResults = searchResults,
-                onQueryChange = onSearchQueryChange,
-                onSelectStop = { stop -> onSelectStop(stop.cisNumber) }
-            )
-        }
-
-        // 6. Horizontální pás okolních zastávek
-        if (result != null && result.nearbyStops.isNotEmpty()) {
+            // 3. Hero karta stavu pozadí
             item {
-                NearbyStopsRow(
-                    nearbyStops = result.nearbyStops,
-                    pinnedCis = pinnedCis,
-                    isMultiStop = isMultiStop,
-                    onSelectAll = onSelectAllNearby,
-                    onSelectStop = onSelectStop
+                HeroCard(
+                    heroState = heroState,
+                    onHeroToggle = onHeroToggle,
+                    onHeroStop = onHeroStop
                 )
             }
-        }
 
-        // 7. Hlavička aktuální vybrané zastávky / uzlu
-        item {
-            StopHeader(result = result, errorMessage = errorMessage)
-        }
+            // 4. Filtry dopravy (Vše, Tram, Bus/Trol) a Chytrý uzel
+            item {
+                TransportFilterSection(
+                    selectedTraction = selectedTraction,
+                    isMultiStop = isMultiStop,
+                    onSelectTraction = onSelectTraction,
+                    onToggleMultiStop = onToggleMultiStop
+                )
+            }
 
-        // 8. Seznam odjezdů nebo chybový stav
-        if (errorMessage != null && result == null) {
+            // 5. Hledání zastávky
             item {
-                ErrorCard(message = errorMessage, onRetry = onRetry)
+                SearchStopsBlock(
+                    query = searchQuery,
+                    searchResults = searchResults,
+                    onQueryChange = onSearchQueryChange,
+                    onSelectStop = { stop -> onSelectStop(stop.cisNumber) }
+                )
             }
-        } else if (result == null) {
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                }
-            }
-        } else {
-            // Pokud nastala chyba při periodickém refreshi, ale máme předchozí data,
-            // nesmažeme celou obrazovku, ale zobrazíme varovný banner nahoře
-            if (errorMessage != null) {
+
+            // 6. Horizontální pás okolních zastávek
+            if (result != null && result.nearbyStops.isNotEmpty()) {
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Aktualizace selhala: $errorMessage",
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                                Text(
-                                    text = "Zobrazuji dříve načtené odjezdy",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
-                                )
-                            }
-                            TextButton(onClick = onRetry) {
-                                Text(
-                                    text = "Obnovit ↻",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
-                        }
-                    }
+                    NearbyStopsRow(
+                        nearbyStops = result.nearbyStops,
+                        pinnedCis = pinnedCis,
+                        isMultiStop = isMultiStop,
+                        onSelectAll = onSelectAllNearby,
+                        onSelectStop = onSelectStop
+                    )
                 }
             }
 
-            val isFarAway = result.primaryStop.distanceMeters > 18_000
-            if (isFarAway) {
+            // 7. Hlavička aktuální vybrané zastávky / uzlu
+            item {
+                StopHeader(result = result, pinnedCis = pinnedCis, errorMessage = errorMessage)
+            }
+
+            // 8. Seznam odjezdů nebo chybový stav
+            if (errorMessage != null && result == null) {
                 item {
-                    Card(
+                    ErrorCard(message = errorMessage, onRetry = onRetry)
+                }
+            } else if (result == null) {
+                item {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            } else {
+                // Pokud nastala chyba při periodickém refreshi, ale máme předchozí data,
+                // nesmažeme celou obrazovku, ale zobrazíme varovný banner nahoře
+                if (errorMessage != null) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                         ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_gps),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(36.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Jste mimo oblast pokrytí Plzně",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Aplikace Stíhám to? vyhodnocuje spoje MHD v Plzni a příměstských linkách PMDP. Nejbližší zastávka je vzdálena ${result.primaryStop.distanceMeters / 1000} km (${result.primaryStop.stop.name}).",
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Aktualizace selhala: $errorMessage",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Text(
+                                        text = "Zobrazuji dříve načtené odjezdy",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                                    )
+                                }
+                                TextButton(onClick = onRetry) {
+                                    Text(
+                                        text = "Obnovit ↻",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            } else if (validDeps.isEmpty()) {
-                item {
-                    Text(
-                        text = "V nejbližší době neodjíždí žádný spoj zvoleného filtru.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(vertical = 20.dp, horizontal = 4.dp)
-                    )
-                }
-            } else {
-                itemsIndexed(
-                    validDeps,
-                    key = { index, dep -> "${dep.lineName}_${dep.targetDepartureEpochMs}_${dep.destination}_${dep.stopCis}_${dep.scheduledHHMM}_$index" }
-                ) { _, dep ->
-                    DepartureCard(
-                        departure = dep,
-                        onToggleFavorite = { onToggleFavoriteLine(dep.lineName) }
-                    )
+
+                val isFarAway = result.primaryStop.distanceMeters > 18_000 && pinnedCis == null
+                if (isFarAway) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_gps),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "Jste mimo oblast pokrytí Plzně",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Aplikace Stíhám to? vyhodnocuje spoje MHD v Plzni a příměstských linkách PMDP. Nejbližší zastávka je vzdálena ${result.primaryStop.distanceMeters / 1000} km (${result.primaryStop.stop.name}). Pro zobrazení odjezdů konkrétní zastávky použijte vyhledávání výše.",
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                } else if (validDeps.isEmpty()) {
+                    item {
+                        Text(
+                            text = "V nejbližší době neodjíždí žádný spoj zvoleného filtru.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(vertical = 20.dp, horizontal = 4.dp)
+                        )
+                    }
+                } else {
+                    items(
+                        validDeps,
+                        key = { dep -> "${dep.lineName}_${dep.targetDepartureEpochMs}_${dep.destination}_${dep.stopCis}_${dep.scheduledHHMM}" }
+                    ) { dep ->
+                        DepartureCard(
+                            departure = dep,
+                            onToggleFavorite = { onToggleFavoriteLine(dep.lineName) }
+                        )
+                    }
                 }
             }
+        }
+
+        if (pullRefreshState.progress > 0f || pullRefreshState.isRefreshing) {
+            PullToRefreshContainer(
+                state = pullRefreshState,
+                modifier = Modifier.align(Alignment.TopCenter),
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }
@@ -623,9 +655,26 @@ private fun NearbyStopsRow(
     onSelectStop: (Int) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    // Zabrání přenosu zbytkového vodorovného posunu na konci řádku zastávek do HorizontalPageru
+    val stopPagerNestedScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset = Offset(available.x, 0f)
+
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity
+            ): Velocity = Velocity(available.x, 0f)
+        }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .nestedScroll(stopPagerNestedScroll)
             .horizontalScroll(scrollState),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -662,10 +711,10 @@ private fun NearbyStopsRow(
 }
 
 @Composable
-private fun StopHeader(result: LiveDeparturesResult?, errorMessage: String?) {
+private fun StopHeader(result: LiveDeparturesResult?, pinnedCis: Int?, errorMessage: String?) {
     Column(modifier = Modifier.padding(top = 4.dp)) {
         if (result != null) {
-            val isFarAway = result.primaryStop.distanceMeters > 18_000
+            val isFarAway = result.primaryStop.distanceMeters > 18_000 && pinnedCis == null
             val title = when {
                 isFarAway -> "Mimo dosah spojů"
                 result.clusterStops.size > 1 -> result.clusterStops.joinToString(" + ") { it.stop.name }
@@ -719,7 +768,8 @@ private fun DepartureCard(
 ) {
     val isMissed = departure.catchability.status == "missed"
     val cardAlpha = if (isMissed) 0.58f else 1.0f
-    val isDark = isSystemInDarkTheme()
+    // Detekce tmavého režimu přímo z aktivního barevného schématu aplikace (respektuje přepínač Světlý / Tmavý / Systém)
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     val (badgeBg, badgeFg, typeLabel) = when {
         departure.isNight -> if (isDark) Triple(Color(0xFF263238), Color(0xFFECEFF1), "NOC")
@@ -864,32 +914,44 @@ private fun DepartureCard(
 
                     Spacer(modifier = Modifier.width(6.dp))
 
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (departure.isFavorite) MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                    if (departure.isFavorite) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { onToggleFavorite() }
+                                .padding(horizontal = 9.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_star_filled),
+                                contentDescription = "Odebrat z prioritních",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(12.dp)
                             )
-                            .clickable { onToggleFavorite() }
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(
-                                id = if (departure.isFavorite) R.drawable.ic_star_filled else R.drawable.ic_star_outline
-                            ),
-                            contentDescription = if (departure.isFavorite) "Odebrat z oblíbených" else "Přidat do oblíbených",
-                            tint = if (departure.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (departure.isFavorite) "Oblíbená" else "Uložit",
-                            color = if (departure.isFavorite) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Prioritní",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable { onToggleFavorite() }
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_star_outline),
+                                contentDescription = "Přidat mezi prioritní linky",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
                     }
                 }
             }

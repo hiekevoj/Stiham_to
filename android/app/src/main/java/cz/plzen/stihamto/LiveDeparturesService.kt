@@ -37,6 +37,23 @@ class LiveDeparturesService : Service(), SensorEventListener {
         const val CHANNEL_ID = "stiham_to_live_lockscreen"
         const val CHANNEL_STANDBY_ID = "stiham_to_standby_silent"
         const val NOTIFICATION_ID = 1001
+        const val FALLBACK_NOTIFICATION_ID = 1002
+
+        fun ensureNotificationChannelExists(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+                val activeChannel = NotificationChannel(
+                    CHANNEL_ID,
+                    "Živé odjezdy MHD na zamykací obrazovce",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Ukazuje živé odjezdy spojů při chůzi a přiblížení k zastávce"
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                    setShowBadge(false)
+                }
+                nm.createNotificationChannel(activeChannel)
+            }
+        }
 
         const val ACTION_START = "cz.plzen.stihamto.ACTION_START" // Ruční spuštění v aplikaci
         const val ACTION_START_AUTO = "cz.plzen.stihamto.ACTION_START_AUTO" // Automatické spuštění (Geofence)
@@ -377,10 +394,19 @@ class LiveDeparturesService : Service(), SensorEventListener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            PmdpRepository.setServiceExplicitlyStopped(this, true)
             lastSleepReason = "Vypnuto úplně (pro spuštění zapni v aplikaci)"
             isSleepingStandby = false
+            ActivityTransitionManager.unregisterTransitions(this)
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        PmdpRepository.setServiceExplicitlyStopped(this, false)
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancel(FALLBACK_NOTIFICATION_ID)
+        } catch (_: Throwable) {
         }
 
         // Zajištění splnění Android 8-14 kontraktu Foreground Service hned při přijetí jakéhokoliv startu,
@@ -1228,7 +1254,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
         } else if (nearestDist <= 40) {
             "U zastávky"
         } else {
-            "${nearestDist} m · ${res.primaryStop.walkingMinutes} min chůze"
+            "$nearestDist m"
         }
 
         val nowMs = System.currentTimeMillis()
@@ -1250,7 +1276,8 @@ class LiveDeparturesService : Service(), SensorEventListener {
                 firstCatchable.leavingInMin == 0 -> "teď"
                 else -> "za ${firstCatchable.leavingInMin} min"
             }
-            "Linka ${firstCatchable.lineName} → ${firstCatchable.destination} $inText  ·  ${firstCatchable.catchability.label}"
+            val delayNote = if (firstCatchable.delayMin != null && firstCatchable.delayMin >= 2) " (+${firstCatchable.delayMin}m)" else ""
+            "${firstCatchable.lineName} → ${firstCatchable.destination}  ·  $inText$delayNote (${firstCatchable.catchability.label})"
         } else {
             "Žádné odjezdy v nejbližší době"
         }
@@ -1266,7 +1293,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
                 }
                 val delayNote = if (d.delayMin != null && d.delayMin >= 2) " (+${d.delayMin}m)" else ""
                 val originPart = if (isMulti && d.stopCis != res.primaryStop.stop.cisNumber) " · ${d.stopName}" else ""
-                "$inText (${d.catchability.label}) — ${d.lineName} → ${d.destination}$delayNote$originPart"
+                "${d.lineName} → ${d.destination}  ·  $inText$delayNote (${d.catchability.label})$originPart"
             }
         }
 
@@ -1426,7 +1453,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setShowWhen(true)
+            .setShowWhen(false)
             .setContentIntent(openAppIntent)
             .addAction(0, tramBtnLabel, toggleTramIntent)
             .addAction(0, "Další zastávka", nextStopIntent)
@@ -1473,7 +1500,9 @@ class LiveDeparturesService : Service(), SensorEventListener {
         stopStandbyOutdoorWatch()
         stopLocationUpdates()
         releaseWalkingWakeLock()
-        // Ponecháváme ActivityTransitionManager aktivní, aby systém mohl aplikaci automaticky znovu probudit při chůzi
+        if (PmdpRepository.isServiceExplicitlyStopped(this)) {
+            ActivityTransitionManager.unregisterTransitions(this)
+        }
         sendBroadcast(Intent(BROADCAST_LIVE_UPDATE).setPackage(packageName))
         super.onDestroy()
     }

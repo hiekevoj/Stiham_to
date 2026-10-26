@@ -18,6 +18,7 @@ class ActivityTransitionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (!ActivityTransitionResult.hasResult(intent)) return
+        if (PmdpRepository.isServiceExplicitlyStopped(context)) return
 
         val result = ActivityTransitionResult.extractResult(intent) ?: return
         for (event in result.transitionEvents) {
@@ -37,31 +38,34 @@ class ActivityTransitionReceiver : BroadcastReceiver() {
                     if (event.transitionType == ActivityTransition.ACTIVITY_TRANSITION_ENTER) {
                         // Uživatel se zvedl a začal jít nebo běžet (z kanceláře / bytu)
                         // Okamžitě probouzíme službu a kontrolujeme odjezdy bez ohledu na to, zda ještě visí na Wi-Fi!
-                        sendServiceAction(context, LiveDeparturesService.ACTION_WALK_DETECTED)
+                        sendServiceAction(context, LiveDeparturesService.ACTION_WALK_DETECTED, allowStartIfStopped = true)
                     }
                 }
 
                 DetectedActivity.STILL -> {
                     if (event.transitionType == ActivityTransition.ACTIVITY_TRANSITION_ENTER) {
-                        // Uživatel se zastavil / sedí na židli
-                        sendServiceAction(context, LiveDeparturesService.ACTION_STILL_DETECTED)
+                        // Uživatel se zastavil / sedí na židli (pouze pokud služba už běží)
+                        sendServiceAction(context, LiveDeparturesService.ACTION_STILL_DETECTED, allowStartIfStopped = false)
                     }
                 }
 
                 DetectedActivity.IN_VEHICLE -> {
                     if (event.transitionType == ActivityTransition.ACTIVITY_TRANSITION_ENTER) {
-                        // Uživatel nasedl do tramvaje / autobusu / auta
-                        sendServiceAction(context, LiveDeparturesService.ACTION_IN_VEHICLE_DETECTED)
+                        // Uživatel nasedl do tramvaje / autobusu / auta (pouze pokud služba už běží)
+                        sendServiceAction(context, LiveDeparturesService.ACTION_IN_VEHICLE_DETECTED, allowStartIfStopped = false)
                     } else if (event.transitionType == ActivityTransition.ACTIVITY_TRANSITION_EXIT) {
-                        // Uživatel vystoupil z vozidla
-                        sendServiceAction(context, LiveDeparturesService.ACTION_EXIT_VEHICLE_DETECTED)
+                        // Uživatel vystoupil z vozidla (pouze pokud služba už běží)
+                        sendServiceAction(context, LiveDeparturesService.ACTION_EXIT_VEHICLE_DETECTED, allowStartIfStopped = false)
                     }
                 }
             }
         }
     }
 
-    private fun sendServiceAction(context: Context, actionStr: String) {
+    private fun sendServiceAction(context: Context, actionStr: String, allowStartIfStopped: Boolean) {
+        if (!LiveDeparturesService.isRunning && !allowStartIfStopped) {
+            return
+        }
         val serviceIntent = Intent(context, LiveDeparturesService::class.java).apply {
             action = actionStr
         }
@@ -87,6 +91,7 @@ class ActivityTransitionReceiver : BroadcastReceiver() {
 
     private fun notifyFallbackToUser(context: Context) {
         try {
+            LiveDeparturesService.ensureNotificationChannelExists(context)
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
             val openAppIntent = android.app.PendingIntent.getActivity(
                 context,
@@ -107,7 +112,7 @@ class ActivityTransitionReceiver : BroadcastReceiver() {
                 .setAutoCancel(true)
                 .build()
 
-            nm.notify(LiveDeparturesService.NOTIFICATION_ID, notif)
+            nm.notify(LiveDeparturesService.FALLBACK_NOTIFICATION_ID, notif)
         } catch (_: Throwable) {
         }
     }

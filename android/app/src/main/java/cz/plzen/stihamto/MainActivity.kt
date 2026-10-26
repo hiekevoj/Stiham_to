@@ -133,7 +133,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         SmartTriggerMonitor.ensureWifiCallbackRegistered(this)
-        ActivityTransitionManager.registerTransitions(this)
+        if (!PmdpRepository.isServiceExplicitlyStopped(this)) {
+            ActivityTransitionManager.registerTransitions(this)
+        }
 
         // Načtení uloženého nastavení motivu
         val prefs = getSharedPreferences("stiham_to_prefs", Context.MODE_PRIVATE)
@@ -274,7 +276,6 @@ class MainActivity : AppCompatActivity() {
 
             HorizontalPager(
                 state = pagerState,
-                userScrollEnabled = false,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 if (page == 0) {
@@ -340,7 +341,7 @@ class MainActivity : AppCompatActivity() {
                     val vName = try {
                         packageManager.getPackageInfo(packageName, 0).versionName
                     } catch (_: Exception) {
-                        "0.1.1"
+                        "0.1.2"
                     }
 
                     SettingsScreen(
@@ -642,10 +643,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleHeroStop() {
+        PmdpRepository.setServiceExplicitlyStopped(this, true)
+        ActivityTransitionManager.unregisterTransitions(this)
         val stopIntent = Intent(this, LiveDeparturesService::class.java).apply {
             action = LiveDeparturesService.ACTION_STOP
         }
-        startService(stopIntent)
+        try {
+            startService(stopIntent)
+        } catch (_: Throwable) {
+        }
         stopService(Intent(this, LiveDeparturesService::class.java))
         lifecycleScope.launch {
             delay(250)
@@ -654,6 +660,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startLiveLockscreenService() {
+        PmdpRepository.setServiceExplicitlyStopped(this, false)
+        ActivityTransitionManager.registerTransitions(this)
         val intent = Intent(this, LiveDeparturesService::class.java).apply {
             action = LiveDeparturesService.ACTION_START
         }

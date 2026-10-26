@@ -309,6 +309,16 @@ object PmdpRepository {
             .edit().putBoolean("sleep_on_wifi", enabled).apply()
     }
 
+    fun isServiceExplicitlyStopped(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean("service_explicitly_stopped", false)
+    }
+
+    fun setServiceExplicitlyStopped(context: Context, stopped: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean("service_explicitly_stopped", stopped).apply()
+    }
+
     fun getHomeWifiSsids(context: Context): Set<String> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getStringSet("home_wifi_ssids", emptySet()) ?: emptySet()
@@ -349,22 +359,25 @@ object PmdpRepository {
 
     fun isDisallowedPublicSsid(ssid: String): Boolean {
         val lower = ssid.lowercase()
-        return lower.contains("pmdp") ||
-                lower.contains("free") ||
-                lower.contains("public") ||
-                lower.contains("hotspot") ||
-                lower.contains("vozy") ||
-                lower.contains("guest")
+        val publicKeywords = listOf(
+            "pmdp", "free", "public", "hotspot", "vozy", "guest",
+            "plzen", "cdwifi", "regiojet", "flixbus", "autobus", "vlak",
+            "eduroam", "zcu", "olympia", "plaza", "borskapole", "tesco",
+            "globus", "kaufland", "albert", "lidl", "ikea", "mcdonald",
+            "kfc", "starbucks", "costa", "crosscafe", "bageterie",
+            "hotel", "penzion", "restaurace", "kavarna", "cafe", "bistro"
+        )
+        return publicKeywords.any { lower.contains(it) }
     }
 
     fun isHomeWifi(context: Context, rawSsid: String?): Boolean {
         val clean = sanitizeSsid(rawSsid)
-        if (clean.isEmpty() || isDisallowedPublicSsid(clean)) return false
+        if (clean.isNotEmpty() && isDisallowedPublicSsid(clean)) return false
         val homes = getHomeWifiSsids(context)
         return if (homes.isEmpty()) {
-            false
+            true
         } else {
-            homes.contains(clean)
+            if (clean.isEmpty()) true else homes.contains(clean)
         }
     }
 
@@ -673,23 +686,19 @@ object PmdpRepository {
             )
         }
 
-        try {
-            val setCookies = conn.headerFields["Set-Cookie"] ?: conn.headerFields["set-cookie"] ?: emptyList()
-            val cookieParts = setCookies.map { it.substringBefore(";").trim() }.filter { it.isNotEmpty() }
-            if (cookieParts.isNotEmpty()) {
-                sessionCookie = cookieParts.joinToString("; ")
-            }
-
-            val html = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
-            val regex = Regex("""name=['"]X-API-Request-Verification-Token['"]\s+value=['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
-            val match = regex.find(html)
-                ?: throw IllegalStateException("Nepodařilo se získat bezpečnostní token z jizdnirady.pmdp.cz")
-
-            verificationToken = match.groupValues[1]
-            tokenTimestampMs = System.currentTimeMillis()
-        } finally {
-            conn.disconnect()
+        val setCookies = conn.headerFields["Set-Cookie"] ?: conn.headerFields["set-cookie"] ?: emptyList()
+        val cookieParts = setCookies.map { it.substringBefore(";").trim() }.filter { it.isNotEmpty() }
+        if (cookieParts.isNotEmpty()) {
+            sessionCookie = cookieParts.joinToString("; ")
         }
+
+        val html = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+        val regex = Regex("""name=['"]X-API-Request-Verification-Token['"]\s+value=['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
+        val match = regex.find(html)
+            ?: throw IllegalStateException("Nepodařilo se získat bezpečnostní token z jizdnirady.pmdp.cz")
+
+        verificationToken = match.groupValues[1]
+        tokenTimestampMs = System.currentTimeMillis()
     }
 
     private fun postStopDeparturesJson(stop: PmdpStop, maxResults: Int = 12, isRetry: Boolean = false): JSONArray {
@@ -725,26 +734,22 @@ object PmdpRepository {
             sessionCookie?.let { setRequestProperty("Cookie", it) }
         }
 
-        try {
-            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
-                writer.write(payload.toString())
-                writer.flush()
-            }
-
-            val code = conn.responseCode
-            if (code != 200) {
-                try { conn.errorStream?.close() } catch (_: Throwable) {}
-                if (!isRetry && (code == 400 || code == 401 || code == 403 || code == 500)) {
-                    return postStopDeparturesJson(stop, maxResults, true)
-                }
-                throw IllegalStateException("Server PMDP vrátil HTTP $code")
-            }
-
-            val responseBody = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
-            return JSONArray(responseBody)
-        } finally {
-            conn.disconnect()
+        OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
+            writer.write(payload.toString())
+            writer.flush()
         }
+
+        val code = conn.responseCode
+        if (code != 200) {
+            try { conn.errorStream?.use { it.readBytes() } } catch (_: Throwable) {}
+            if (!isRetry && (code == 400 || code == 401 || code == 403 || code == 500)) {
+                return postStopDeparturesJson(stop, maxResults, true)
+            }
+            throw IllegalStateException("Server PMDP vrátil HTTP $code")
+        }
+
+        val responseBody = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+        return JSONArray(responseBody)
     }
 
     private fun parseDeparturesArray(
@@ -876,7 +881,7 @@ object PmdpRepository {
                     set(java.util.Calendar.MILLISECOND, 0)
                 }
                 val parsedMs = cal.timeInMillis + ((delayMin ?: 0) * 60_000L)
-                if (abs(parsedMs - fallbackEpoch) <= 7_200_000L) {
+                if (abs(parsedMs - fallbackEpoch) <= 1_800_000L) {
                     return parsedMs
                 }
             } catch (_: Exception) {
@@ -893,6 +898,16 @@ object PmdpRepository {
         if (remainingMs in -15_000L..15_000L) return 0
         // Zaokrouhlení odpovídající reálné tabuli na zastávce
         return ((remainingMs + 15_000L) / 60_000L).toInt()
+    }
+
+    private fun sortDepartures(list: List<LiveDeparture>): List<LiveDeparture> {
+        return list.sortedWith(
+            compareByDescending<LiveDeparture> { it.catchability.status != "missed" && it.isFavorite }
+                .thenBy { if (it.leavingInMin < 0) 999 else it.leavingInMin }
+                .thenByDescending { it.catchability.status != "missed" }
+                .thenByDescending { it.isFavorite }
+                .thenBy { it.stopDistanceMeters }
+        )
     }
 
     /**
@@ -926,7 +941,7 @@ object PmdpRepository {
         }
 
         return res.copy(
-            departures = updatedDeps
+            departures = sortDepartures(updatedDeps)
         )
     }
 
@@ -1016,8 +1031,7 @@ object PmdpRepository {
         val allFailed = perStopResults.isNotEmpty() && perStopResults.all { it.second != null }
         if (allFailed) {
             val primaryErr = perStopResults.firstNotNullOfOrNull { it.second }
-                ?: java.io.IOException("Nepodařilo se připojit k serveru PMDP")
-            throw primaryErr
+            throw java.io.IOException("Nepodařilo se spojit se serverem PMDP. Zkontrolujte připojení k internetu.", primaryErr)
         }
 
         var merged = perStopResults.flatMap { it.first }
@@ -1031,13 +1045,9 @@ object PmdpRepository {
 
         // Řazení:
         // 1) Oblíbené linky (★), které lze stihnout
-        // 2) Stihnutelné spoje před těmi, co už ujíždí nebo odjely
-        // 3) Čas do odjezdu (leavingInMin)
-        val sorted = merged.sortedWith(
-            compareByDescending<LiveDeparture> { it.catchability.status != "missed" && it.isFavorite }
-                .thenByDescending { it.catchability.status != "missed" }
-                .thenBy { if (it.leavingInMin < 0) 999 else it.leavingInMin }
-        )
+        // 2) Čas do odjezdu (leavingInMin >= 0 před těmi, co už odjely)
+        // 3) V rámci stejné minuty stihnutelné spoje před těmi, co už ujíždí (Nestíháš)
+        val sorted = sortDepartures(merged)
 
         val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Europe/Prague"))
         val hhmmss = "%02d:%02d:%02d".format(

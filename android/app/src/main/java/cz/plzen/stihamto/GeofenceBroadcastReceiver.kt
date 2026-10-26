@@ -10,6 +10,7 @@ import com.google.android.gms.location.GeofencingEvent
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         try {
+            if (PmdpRepository.isServiceExplicitlyStopped(context)) return
             SmartTriggerMonitor.ensureWifiCallbackRegistered(context)
 
             val event = GeofencingEvent.fromIntent(intent) ?: return
@@ -68,6 +69,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
     private fun notifyUserNearStop(context: Context) {
         try {
+            LiveDeparturesService.ensureNotificationChannelExists(context)
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
             val openAppIntent = android.app.PendingIntent.getActivity(
                 context,
@@ -88,7 +90,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 .setAutoCancel(true)
                 .build()
 
-            nm.notify(LiveDeparturesService.NOTIFICATION_ID, notif)
+            nm.notify(LiveDeparturesService.FALLBACK_NOTIFICATION_ID, notif)
         } catch (_: Throwable) {
         }
     }

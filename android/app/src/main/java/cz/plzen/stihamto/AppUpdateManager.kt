@@ -83,7 +83,7 @@ object AppUpdateManager {
             @Suppress("DEPRECATION")
             pInfo.versionCode
         }
-        val currentName = pInfo.versionName ?: "0.1.1"
+        val currentName = pInfo.versionName ?: "0.1.2"
 
         var latestFoundCode = currentCode
         var latestFoundName = currentName
