@@ -7,9 +7,11 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Base64
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -28,19 +30,30 @@ data class UpdateCheckResult(
 
 object AppUpdateManager {
 
-    private const val GITHUB_VERSION_JSON_URL =
-        "https://raw.githubusercontent.com/hiekevoj/Stiham_to/main/version.json"
+    private const val GITHUB_REPO = "hiekevoj/Stiham_to"
 
+    // 1. GitHub Contents API (okamžitá odezva bez 5min CDN zpoždění raw.githubusercontent.com)
+    private const val GITHUB_CONTENTS_API_URL =
+        "https://api.github.com/repos/$GITHUB_REPO/contents/version.json?ref=main"
+
+    // 2. GitHub Releases API (pokud je vytvořen plnohodnotný GitHub Release)
     private const val GITHUB_RELEASES_API_URL =
-        "https://api.github.com/repos/hiekevoj/Stiham_to/releases/latest"
+        "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+
+    // 3. GitHub Tags API (pokud je pushnutý jen git tag, např. v0.1.3)
+    private const val GITHUB_TAGS_API_URL =
+        "https://api.github.com/repos/$GITHUB_REPO/tags"
+
+    // 4. Záložní přímý raw odkaz
+    private const val GITHUB_VERSION_JSON_URL =
+        "https://raw.githubusercontent.com/$GITHUB_REPO/main/version.json"
 
     private const val FALLBACK_DIRECT_APK_URL =
-        "https://github.com/hiekevoj/Stiham_to/raw/main/StihamTo-Plzen.apk"
+        "https://github.com/$GITHUB_REPO/raw/main/StihamTo-Plzen.apk"
 
     /**
      * Sémantické porovnání verzí (SemVer).
      * Vrací kladné číslo pokud v1 > v2, záporné pokud v1 < v2, 0 pokud v1 == v2.
-     * Podporuje formáty jako "0.0.15", "v0.1.0", "1.0", "0.0.14-beta".
      */
     fun compareVersions(v1: String, v2: String): Int {
         val clean1 = v1.trim().removePrefix("v").removePrefix("V").substringBefore("-")
@@ -65,8 +78,11 @@ object AppUpdateManager {
     }
 
     /**
-     * Zkontroluje na GitHubu existenci novější verze aplikace.
-     * Ověřuje jak GitHub Releases API (primární distribuční kanál), tak raw version.json.
+     * Zkontroluje na GitHubu existenci novější verze aplikace ze 4 nezávislých zdrojů:
+     * 1. GitHub Contents API pro version.json (obchází 5min Fastly CDN cache na raw.githubusercontent.com!)
+     * 2. GitHub Releases API (/releases/latest)
+     * 3. GitHub Tags API (/tags – zachytí i prosté git tagy bez vytvořeného Release)
+     * 4. Přímý raw version.json jako poslední záloha
      */
     suspend fun checkForUpdates(context: Context): UpdateCheckResult = withContext(Dispatchers.IO) {
         val pm = context.packageManager
@@ -83,18 +99,80 @@ object AppUpdateManager {
             @Suppress("DEPRECATION")
             pInfo.versionCode
         }
-        val currentName = pInfo.versionName ?: "0.1.2"
+        val currentName = pInfo.versionName ?: "0.1.3"
 
         var latestFoundCode = currentCode
         var latestFoundName = currentName
         var releaseNotes = ""
         var apkDownloadUrl = FALLBACK_DIRECT_APK_URL
         var hasNewer = false
+        var anySourceSucceeded = false
+        var lastError: Exception? = null
 
-        // 1. Zkontrolujeme GitHub Releases API (tam jsou oficiální tagy a zkompilované assety)
+        fun applyCandidateVersion(
+            candCode: Int,
+            candName: String,
+            candNotes: String,
+            candApkUrl: String?
+        ) {
+            val cleanCandName = candName.trim().removePrefix("v").removePrefix("V")
+            if (cleanCandName.isEmpty()) return
+            val isCodeNewer = candCode > currentCode
+            val isNameNewer = isNewerVersion(cleanCandName, currentName)
+
+            if (isCodeNewer || isNameNewer) {
+                if (!hasNewer || candCode > latestFoundCode || isNewerVersion(cleanCandName, latestFoundName)) {
+                    hasNewer = true
+                    latestFoundCode = maxOf(candCode, currentCode + 1)
+                    latestFoundName = cleanCandName
+                    if (candNotes.isNotEmpty()) {
+                        releaseNotes = candNotes
+                    }
+                    if (!candApkUrl.isNullOrEmpty() && !candApkUrl.contains("/public/")) {
+                        apkDownloadUrl = candApkUrl
+                    }
+                }
+            }
+        }
+
+        // 1. PRIMÁRNÍ ZDROJ: GitHub Contents API (okamžitě vrací čerstvý version.json přímo z Gitu bez CDN cache!)
         try {
-            val releasesUrl = URL(GITHUB_RELEASES_API_URL)
-            val conn = (releasesUrl.openConnection() as HttpURLConnection).apply {
+            val conn = (URL(GITHUB_CONTENTS_API_URL).openConnection() as HttpURLConnection).apply {
+                useCaches = false
+                connectTimeout = 8000
+                readTimeout = 8000
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "StihamTo-Plzen-App")
+                setRequestProperty("Accept", "application/vnd.github.v3+json")
+                setRequestProperty("Cache-Control", "no-cache, no-store, max-age=0")
+            }
+
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val metaObj = JSONObject(body)
+                val base64Content = metaObj.optString("content", "")
+                if (base64Content.isNotEmpty()) {
+                    val decodedJson = String(Base64.decode(base64Content, Base64.DEFAULT), Charsets.UTF_8)
+                    val verObj = JSONObject(decodedJson)
+                    anySourceSucceeded = true
+                    applyCandidateVersion(
+                        candCode = verObj.optInt("versionCode", currentCode),
+                        candName = verObj.optString("versionName", currentName),
+                        candNotes = verObj.optString("releaseNotes", "").trim(),
+                        candApkUrl = verObj.optString("apkUrl", FALLBACK_DIRECT_APK_URL).trim()
+                    )
+                }
+            }
+            conn.disconnect()
+        } catch (e: Exception) {
+            lastError = e
+            android.util.Log.w("AppUpdateManager", "GitHub Contents API dotaz selhal: ${e.message}")
+        }
+
+        // 2. ZDROJ: GitHub Releases API (pokud existuje oficiální Release s přiloženým APK assetem)
+        try {
+            val conn = (URL(GITHUB_RELEASES_API_URL).openConnection() as HttpURLConnection).apply {
+                useCaches = false
                 connectTimeout = 8000
                 readTimeout = 8000
                 requestMethod = "GET"
@@ -106,7 +184,6 @@ object AppUpdateManager {
                 val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
                 val obj = JSONObject(jsonStr)
                 val rawTag = obj.optString("tag_name", "").trim()
-                val tagName = rawTag.removePrefix("v").removePrefix("V")
                 val notes = obj.optString("body", "").trim()
 
                 var assetApkUrl: String? = null
@@ -119,65 +196,101 @@ object AppUpdateManager {
                             val rawUrl = asset.optString("browser_download_url", "")
                             if (rawUrl.isNotEmpty()) {
                                 assetApkUrl = rawUrl
+                                break
                             }
-                            break
                         }
                     }
                 }
-
-                if (tagName.isNotEmpty()) {
-                    val isTagNewer = isNewerVersion(tagName, currentName)
-
-                    if (isTagNewer) {
-                        hasNewer = true
-                        latestFoundName = tagName
-                        latestFoundCode = currentCode + 1
-                        releaseNotes = notes.ifEmpty { "Nová verze $tagName na GitHub Releases" }
-                        apkDownloadUrl = assetApkUrl ?: FALLBACK_DIRECT_APK_URL
-                    }
-                }
+                anySourceSucceeded = true
+                applyCandidateVersion(
+                    candCode = currentCode,
+                    candName = rawTag,
+                    candNotes = notes,
+                    candApkUrl = assetApkUrl
+                )
             }
+            conn.disconnect()
         } catch (e: Exception) {
+            lastError = e
             android.util.Log.w("AppUpdateManager", "GitHub Releases API dotaz selhal: ${e.message}")
         }
 
-        // 2. Pokud Releases API ještě novější verzi nevrátilo (nebo selhalo), zkontrolujeme raw version.json
-        // Přidáváme timestamp query pro eliminaci CDN cache na raw.githubusercontent.com
+        // 3. ZDROJ: GitHub Tags API (zachytí git tagy v0.1.x i když nebyl ručně publikován Release!)
         try {
-            val cacheBusterUrl = "$GITHUB_VERSION_JSON_URL?nocache=${System.currentTimeMillis()}"
-            val conn = (URL(cacheBusterUrl).openConnection() as HttpURLConnection).apply {
+            val conn = (URL(GITHUB_TAGS_API_URL).openConnection() as HttpURLConnection).apply {
+                useCaches = false
                 connectTimeout = 8000
                 readTimeout = 8000
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", "StihamTo-Plzen-App")
-                setRequestProperty("Cache-Control", "no-cache, no-store")
+                setRequestProperty("Accept", "application/vnd.github.v3+json")
+            }
+
+            if (conn.responseCode == 200) {
+                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
+                val arr = JSONArray(jsonStr)
+                if (arr.length() > 0) {
+                    anySourceSucceeded = true
+                    for (i in 0 until minOf(5, arr.length())) {
+                        val tagObj = arr.getJSONObject(i)
+                        val tagName = tagObj.optString("name", "").trim()
+                        applyCandidateVersion(
+                            candCode = currentCode,
+                            candName = tagName,
+                            candNotes = "",
+                            candApkUrl = null
+                        )
+                    }
+                }
+            }
+            conn.disconnect()
+        } catch (e: Exception) {
+            lastError = e
+            android.util.Log.w("AppUpdateManager", "GitHub Tags API dotaz selhal: ${e.message}")
+        }
+
+        // 4. ZÁLOŽNÍ ZDROJ: Přímý raw.githubusercontent.com/version.json
+        try {
+            val cacheBusterUrl = "$GITHUB_VERSION_JSON_URL?t=${System.currentTimeMillis()}"
+            val conn = (URL(cacheBusterUrl).openConnection() as HttpURLConnection).apply {
+                useCaches = false
+                connectTimeout = 8000
+                readTimeout = 8000
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "StihamTo-Plzen-App")
+                setRequestProperty("Cache-Control", "no-cache, no-store, max-age=0")
+                setRequestProperty("Pragma", "no-cache")
             }
 
             if (conn.responseCode == 200) {
                 val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
                 val obj = JSONObject(jsonStr)
-                val rawCode = obj.optInt("versionCode", currentCode)
-                val rawName = obj.optString("versionName", currentName).trim()
-                val rawNotes = obj.optString("releaseNotes", "").trim()
-                val rawApk = obj.optString("apkUrl", FALLBACK_DIRECT_APK_URL).trim()
-
-                val isCodeNewer = rawCode > currentCode
-                val isNameNewer = isNewerVersion(rawName, currentName)
-
-                if (isCodeNewer || isNameNewer) {
-                    if (!hasNewer || rawCode > latestFoundCode || isNewerVersion(rawName, latestFoundName)) {
-                        hasNewer = true
-                        latestFoundCode = rawCode
-                        latestFoundName = rawName
-                        releaseNotes = rawNotes.ifEmpty { releaseNotes }
-                        if (rawApk.isNotEmpty() && !rawApk.contains("/public/")) {
-                            apkDownloadUrl = rawApk
-                        }
-                    }
-                }
+                anySourceSucceeded = true
+                applyCandidateVersion(
+                    candCode = obj.optInt("versionCode", currentCode),
+                    candName = obj.optString("versionName", currentName),
+                    candNotes = obj.optString("releaseNotes", "").trim(),
+                    candApkUrl = obj.optString("apkUrl", FALLBACK_DIRECT_APK_URL).trim()
+                )
             }
+            conn.disconnect()
         } catch (e: Exception) {
-            android.util.Log.w("AppUpdateManager", "version.json dotaz selhal: ${e.message}")
+            lastError = e
+            android.util.Log.w("AppUpdateManager", "raw version.json dotaz selhal: ${e.message}")
+        }
+
+        // Pokud žádný ze 4 zdrojů neodpověděl (např. výpadek internetu), vyhodíme chybu místo lživého "Máte nejnovější verzi"!
+        if (!anySourceSucceeded && !hasNewer) {
+            throw java.io.IOException(
+                "Nepodařilo se spojit s GitHubem (${lastError?.message ?: "zkontrolujte připojení"})."
+            )
+        }
+
+        // Připojíme unikátní timestamp k URL samotného APK, aby CDN při stahování nevrátila starý zkešovaný APK soubor
+        val finalApkUrl = if (apkDownloadUrl.contains("?")) {
+            "$apkDownloadUrl&t=${System.currentTimeMillis()}"
+        } else {
+            "$apkDownloadUrl?t=${System.currentTimeMillis()}"
         }
 
         UpdateCheckResult(
@@ -187,7 +300,7 @@ object AppUpdateManager {
             latestVersionCode = latestFoundCode,
             latestVersionName = latestFoundName,
             releaseNotes = releaseNotes.ifEmpty { "K dispozici je nová verze aplikace Stíhám to? ($latestFoundName)." },
-            apkUrl = apkDownloadUrl
+            apkUrl = finalApkUrl
         )
     }
 
@@ -216,10 +329,12 @@ object AppUpdateManager {
         while (redirectCount < 6) {
             val url = URL(currentUrl)
             val conn = url.openConnection() as HttpURLConnection
+            conn.useCaches = false
             conn.instanceFollowRedirects = false
             conn.connectTimeout = 15000
             conn.readTimeout = 30000
             conn.setRequestProperty("User-Agent", "StihamTo-Plzen-App")
+            conn.setRequestProperty("Cache-Control", "no-cache, no-store, max-age=0")
             conn.setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
 
             val status = conn.responseCode

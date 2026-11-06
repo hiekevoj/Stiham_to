@@ -110,7 +110,22 @@ class MainActivity : AppCompatActivity() {
     ) { _ ->
         refreshAllState()
         ActivityTransitionManager.registerTransitions(this)
-        refreshFromGpsAndStartLive()
+        val hasFine = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasBg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        } else true
+
+        if (hasFine && !hasBg && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            bgLocationPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        } else {
+            refreshFromGpsAndStartLive()
+        }
     }
 
     private val bgLocationPermissionLauncher = registerForActivityResult(
@@ -135,6 +150,15 @@ class MainActivity : AppCompatActivity() {
         SmartTriggerMonitor.ensureWifiCallbackRegistered(this)
         if (!PmdpRepository.isServiceExplicitlyStopped(this)) {
             ActivityTransitionManager.registerTransitions(this)
+            // Pokud máme potřebná oprávnění a služba ještě neběží (např. po instalaci nebo restartu),
+            // automaticky ji spustíme na pozadí, aby uživatel nemusel nic ručně zapínat!
+            val hasFineLoc = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (hasFineLoc && !LiveDeparturesService.isRunning) {
+                startLiveLockscreenService()
+            }
         }
 
         // Načtení uloženého nastavení motivu
@@ -528,7 +552,7 @@ class MainActivity : AppCompatActivity() {
                 isRunning = true,
                 isSleeping = false,
                 title = "Živé sledování běží",
-                subtitle = "Živé odjezdy jsou v notifikaci ($netText). Uspí se po 2,5 min na místě.",
+                subtitle = "Živé odjezdy jsou v notifikaci ($netText). Uspí se po 3 min na místě.",
                 actionText = "Uspat do klidu"
             )
         } else if (LiveDeparturesService.isRunning && LiveDeparturesService.isSleepingStandby) {
@@ -547,7 +571,7 @@ class MainActivity : AppCompatActivity() {
                     LiveDeparturesService.StandbyCooldownCause.INDOOR_IDLE ->
                         "Uspáno na místě v budově (klid ještě $indoorCooldownMin min)."
                     LiveDeparturesService.StandbyCooldownCause.STOP_IDLE ->
-                        "Uspáno po 5 min čekání na zastávce (klid ještě $indoorCooldownMin min)."
+                        "Uspáno po 8 min čekání na zastávce (klid ještě $indoorCooldownMin min)."
                     else ->
                         "Dočasná pauza (ještě $indoorCooldownMin min)."
                 }
@@ -581,6 +605,13 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
+        val hasBgLoc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        } else true
+
         val hasNotif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
                 this,
@@ -595,7 +626,7 @@ class MainActivity : AppCompatActivity() {
             ) == PackageManager.PERMISSION_GRANTED
         } else true
 
-        return !(hasFineLoc && hasNotif && hasActivityRec)
+        return !(hasFineLoc && hasBgLoc && hasNotif && hasActivityRec)
     }
 
     private fun getSystemDiagState(): SystemDiagState {
@@ -603,6 +634,13 @@ class MainActivity : AppCompatActivity() {
             this,
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
+
+        val hasBgLoc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        } else true
 
         val hasActivity = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ContextCompat.checkSelfPermission(
@@ -623,7 +661,7 @@ class MainActivity : AppCompatActivity() {
             pm?.isIgnoringBatteryOptimizations(packageName) == true
         } else true
 
-        return SystemDiagState(hasLoc, hasActivity, hasNotif, ignoringBatteryOpt)
+        return SystemDiagState(hasLoc && hasBgLoc, hasActivity, hasNotif, ignoringBatteryOpt)
     }
 
     private fun handleHeroToggle() {

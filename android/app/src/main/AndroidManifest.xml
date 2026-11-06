@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
@@ -51,8 +52,19 @@
         <receiver
             android:name=".ActivityTransitionReceiver"
             android:enabled="true"
-            android:exported="true"
-            android:permission="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
+            android:exported="false" />
+
+        <!-- BroadcastReceiver pro automatickou obnovu po restartu telefonu a aktualizaci -->
+        <receiver
+            android:name=".SystemBootAndUpdateReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- FileProvider pro instalaci stažených aktualizací APK -->
         <provider

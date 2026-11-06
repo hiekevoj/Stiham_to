@@ -377,9 +377,61 @@ object PmdpRepository {
         return if (homes.isEmpty()) {
             true
         } else {
-            if (clean.isEmpty()) true else homes.contains(clean)
+            if (clean.isEmpty()) false else homes.contains(clean)
         }
     }
+
+    fun saveLastKnownLocation(context: Context, lat: Double, lon: Double) {
+        if (lat.isNaN() || lon.isNaN()) return
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("last_known_lat", lat.toString())
+            .putString("last_known_lon", lon.toString())
+            .apply()
+    }
+
+    fun getLastKnownLocation(context: Context): Pair<Double, Double> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val lat = prefs.getString("last_known_lat", null)?.toDoubleOrNull() ?: 49.7478
+        val lon = prefs.getString("last_known_lon", null)?.toDoubleOrNull() ?: 13.3746
+        return Pair(lat, lon)
+    }
+
+    fun saveStandbyPersistence(
+        context: Context,
+        isSleeping: Boolean,
+        sleepReason: String?,
+        postRideUntilMs: Long,
+        indoorUntilMs: Long,
+        indoorCauseName: String
+    ) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("persisted_is_sleeping", isSleeping)
+            .putString("persisted_sleep_reason", sleepReason)
+            .putLong("persisted_post_ride_until", postRideUntilMs)
+            .putLong("persisted_indoor_until", indoorUntilMs)
+            .putString("persisted_indoor_cause", indoorCauseName)
+            .apply()
+    }
+
+    fun loadStandbyPersistence(context: Context): Quintuple<Boolean, String?, Long, Long, String> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val isSleeping = prefs.getBoolean("persisted_is_sleeping", false)
+        val reason = prefs.getString("persisted_sleep_reason", null)
+        val postRide = prefs.getLong("persisted_post_ride_until", 0L)
+        val indoor = prefs.getLong("persisted_indoor_until", 0L)
+        val cause = prefs.getString("persisted_indoor_cause", "NONE") ?: "NONE"
+        return Quintuple(isSleeping, reason, postRide, indoor, cause)
+    }
+
+    data class Quintuple<A, B, C, D, E>(
+        val first: A,
+        val second: B,
+        val third: C,
+        val fourth: D,
+        val fifth: E
+    )
 
     fun saveAutoSleptLocation(context: Context, lat: Double, lon: Double) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -404,6 +456,7 @@ object PmdpRepository {
         return haversineMeters(lat, lon, sLat, sLon) < 42.0
     }
 
+    @Synchronized
     fun loadStops(context: Context): List<PmdpStop> {
         cachedStops?.let { return it }
         val jsonText = context.assets.open("stops.json").bufferedReader().use { it.readText() }
@@ -911,13 +964,22 @@ object PmdpRepository {
     }
 
     /**
-     * Lokální interní přepočet odjezdů podle aktuálního systémového času (0 % síť, 0 % GPS).
-     * Odfiltruje spoje, které už odjely před > 25 s, a aktualizuje minuty do odjezdu i stav Stíháš/Nestíháš/Odjelo.
+     * Lokální interní přepočet odjezdů podle aktuálního systémového času a polohy (0 % síť, 0 % GPS).
+     * Odfiltruje spoje, které už odjely před > 25 s, a aktualizuje vzdálenost, minuty do odjezdu i stav Stíháš/Nestíháš/Odjelo.
      */
     fun recalculateWithLiveCountdown(
         res: LiveDeparturesResult,
-        nowMs: Long = System.currentTimeMillis()
+        nowMs: Long = System.currentTimeMillis(),
+        currentLat: Double = Double.NaN,
+        currentLon: Double = Double.NaN
     ): LiveDeparturesResult {
+        val hasCoords = !currentLat.isNaN() && !currentLon.isNaN()
+        val stopDistMap = if (hasCoords) {
+            (res.clusterStops + res.nearbyStops).associate { ranked ->
+                ranked.stop.cisNumber to calculateStopDistance(ranked.stop, currentLat, currentLon)
+            }
+        } else emptyMap()
+
         var anyChanged = false
         val updatedDeps = ArrayList<LiveDeparture>(res.departures.size)
         for (dep in res.departures) {
@@ -926,21 +988,37 @@ object PmdpRepository {
                 anyChanged = true
                 continue
             }
+            val newDist = stopDistMap[dep.stopCis] ?: dep.stopDistanceMeters
             val newMin = computeLiveLeavingMinutes(dep.targetDepartureEpochMs, nowMs)
-            val newCatch = evaluateCatchability(dep.stopDistanceMeters, newMin)
-            if (newMin == dep.leavingInMin && newCatch == dep.catchability) {
+            val newCatch = evaluateCatchability(newDist, newMin)
+            if (newDist == dep.stopDistanceMeters && newMin == dep.leavingInMin && newCatch == dep.catchability) {
                 updatedDeps.add(dep)
             } else {
                 anyChanged = true
-                updatedDeps.add(dep.copy(leavingInMin = newMin, catchability = newCatch))
+                updatedDeps.add(
+                    dep.copy(
+                        stopDistanceMeters = newDist,
+                        leavingInMin = newMin,
+                        catchability = newCatch
+                    )
+                )
             }
         }
+
+        val newPrimary = if (hasCoords) {
+            val d = calculateStopDistance(res.primaryStop.stop, currentLat, currentLon)
+            if (d != res.primaryStop.distanceMeters) {
+                anyChanged = true
+                res.primaryStop.copy(distanceMeters = d, walkingMinutes = computeWalkMinutes(d))
+            } else res.primaryStop
+        } else res.primaryStop
 
         if (!anyChanged && updatedDeps.size == res.departures.size) {
             return res
         }
 
         return res.copy(
+            primaryStop = newPrimary,
             departures = sortDepartures(updatedDeps)
         )
     }

@@ -576,7 +576,7 @@ fun SettingsScreen(
         item {
             SettingsCategoryCard(title = "Stav systému a oprávnění") {
                 val items = listOf(
-                    "Poloha GPS" to diagState.hasLoc,
+                    "Poloha GPS (vždy / na pozadí)" to diagState.hasLoc,
                     "Pohyb a chůze" to diagState.hasActivity,
                     "Notifikace" to diagState.hasNotif,
                     "Baterie (bez omezení)" to diagState.ignoringBatteryOpt

@@ -117,6 +117,12 @@ object SmartTriggerMonitor {
             if (!currentlyOnWifi) {
                 lastKnownWifiSsid = null
             }
+            // V hluboké noci (01:00 až 04:00) automatické probuzení z výpadku domácí Wi-Fi nebo restartu routeru ignorujeme
+            val hourOfDay = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            if (hourOfDay in 1..3) {
+                return
+            }
+
             // Jakmile se telefon odpojí od Wi-Fi (vypnutí Wi-Fi nebo odchod z bytu na mobilní data),
             // okamžitě probudíme notifikaci na zamykací obrazovce (pokud uživatel službu ručně nevypnul)!
             if (wasWifi && !currentlyOnWifi && !PmdpRepository.isServiceExplicitlyStopped(appCtx)) {

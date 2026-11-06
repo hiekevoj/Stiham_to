@@ -1,8 +1,8 @@
 {
-  "versionCode": 18,
-  "versionName": "0.1.2",
-  "releaseDate": "2026-10-26",
+  "versionCode": 19,
+  "versionName": "0.1.3",
+  "releaseDate": "2026-11-06",
   "apkUrl": "https://raw.githubusercontent.com/hiekevoj/Stiham_to/main/StihamTo-Plzen.apk",
   "fallbackApkUrl": "https://github.com/hiekevoj/Stiham_to/raw/main/StihamTo-Plzen.apk",
-  "releaseNotes": "• Verze 0.1.2: sjednocení notifikace, oprava řazení a spolehlivosti služby\n• Sjednocený a čistý formát kompaktní i rozbalené notifikace na zamykací obrazovce\n• Chronologické řazení odjezdů s prioritou stihnutelných oblíbených linek\n• Trvalé respektování volby 'Vypnout úplně' napříč senzory pohybu, Wi-Fi a geofencingem\n• Plynulé přepínání obrazovek (swipe) s izolací horizontálního posuvu zastávek a Pull-to-Refresh\n• Spolehlivá detekce domácí Wi-Fi na Androidu 12+ (NetworkCapabilities) a zachování HTTP Keep-Alive"
+  "releaseNotes": "• Verze 0.1.3: maximální spolehlivost na pozadí a oprava GitHub aktualizací\n• Oprava stahování aktualizací v aplikaci (GitHub Contents & Tags API s obejitím 5min CDN cache)\n• Chytré přestupní okno po výstupu z MHD (zobrazí návazné spoje v uzlu a uspí se při odchodu > 85 m)\n• Proaktivní Fast-Fix polohy hned při vykročení a 320m geofence s okamžitou odezvou\n• Oprava kritické chyby v ActivityTransitionReceiver a automatická obnova po restartu telefonu"
 }
