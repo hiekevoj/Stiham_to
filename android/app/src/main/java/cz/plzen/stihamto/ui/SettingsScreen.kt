@@ -37,7 +37,8 @@ data class SystemDiagState(
     val hasLoc: Boolean,
     val hasActivity: Boolean,
     val hasNotif: Boolean,
-    val ignoringBatteryOpt: Boolean
+    val ignoringBatteryOpt: Boolean,
+    val isLocationEnabled: Boolean = true
 )
 
 @Composable
@@ -74,6 +75,7 @@ fun SettingsScreen(
     onPostRideCooldownChange: (Int) -> Unit,
     diagState: SystemDiagState,
     onRequestPermissions: () -> Unit,
+    onOpenLocationSettings: () -> Unit = {},
     onOpenBatterySettings: () -> Unit,
     updateState: UpdateUiState,
     onCheckForUpdates: () -> Unit,
@@ -576,17 +578,18 @@ fun SettingsScreen(
         item {
             SettingsCategoryCard(title = "Stav systému a oprávnění") {
                 val items = listOf(
-                    "Poloha GPS (vždy / na pozadí)" to diagState.hasLoc,
-                    "Pohyb a chůze" to diagState.hasActivity,
-                    "Notifikace" to diagState.hasNotif,
-                    "Baterie (bez omezení)" to diagState.ignoringBatteryOpt
+                    Triple("Systémová poloha v telefonu (GPS)", diagState.isLocationEnabled, if (diagState.isLocationEnabled) "Zapnuto" else "Vypnuto"),
+                    Triple("Oprávnění k poloze (vždy / na pozadí)", diagState.hasLoc, if (diagState.hasLoc) "Aktivní" else "Chybí"),
+                    Triple("Pohyb a chůze", diagState.hasActivity, if (diagState.hasActivity) "Aktivní" else "Chybí"),
+                    Triple("Notifikace", diagState.hasNotif, if (diagState.hasNotif) "Aktivní" else "Chybí"),
+                    Triple("Baterie (bez omezení)", diagState.ignoringBatteryOpt, if (diagState.ignoringBatteryOpt) "Aktivní" else "Chybí")
                 )
 
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items.forEach { (label, ok) ->
+                    items.forEach { (label, ok, statusLabel) ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -612,7 +615,7 @@ fun SettingsScreen(
                                     .padding(horizontal = 10.dp, vertical = 3.dp)
                             ) {
                                 Text(
-                                    text = if (ok) "Aktivní" else "Chybí",
+                                    text = statusLabel,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (ok) MaterialTheme.colorScheme.onPrimaryContainer
@@ -620,6 +623,17 @@ fun SettingsScreen(
                                 )
                             }
                         }
+                    }
+                }
+
+                if (!diagState.isLocationEnabled) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = onOpenLocationSettings,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Zapnout polohu (GPS) v telefonu", fontSize = 13.sp)
                     }
                 }
 

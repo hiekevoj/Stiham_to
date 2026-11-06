@@ -1,8 +1,8 @@
 {
-  "versionCode": 19,
-  "versionName": "0.1.3",
+  "versionCode": 20,
+  "versionName": "0.1.4",
   "releaseDate": "2026-11-06",
   "apkUrl": "https://raw.githubusercontent.com/hiekevoj/Stiham_to/main/StihamTo-Plzen.apk",
   "fallbackApkUrl": "https://github.com/hiekevoj/Stiham_to/raw/main/StihamTo-Plzen.apk",
-  "releaseNotes": "• Verze 0.1.3: maximální spolehlivost na pozadí a oprava GitHub aktualizací\n• Oprava stahování aktualizací v aplikaci (GitHub Contents & Tags API s obejitím 5min CDN cache)\n• Chytré přestupní okno po výstupu z MHD (zobrazí návazné spoje v uzlu a uspí se při odchodu > 85 m)\n• Proaktivní Fast-Fix polohy hned při vykročení a 320m geofence s okamžitou odezvou\n• Oprava kritické chyby v ActivityTransitionReceiver a automatická obnova po restartu telefonu"
+  "releaseNotes": "• Verze 0.1.4: hlídání vypnuté systémové polohy (GPS) a přesná diagnostika GitHub aktualizací\n• Okamžité varování na hlavní obrazovce, v notifikaci i v nastavení, pokud je v telefonu vypnutá poloha (GPS), aby nebylo matoucí zobrazení výchozí zastávky Sady Pětatřicátníků\n• Automatická detekce zapnutí/vypnutí GPS v horní liště telefonu s okamžitým načtením reálné zastávky\n• Detailní diagnostika chyb při aktualizaci z GitHubu (rozlišení soukromého repozitáře HTTP 404, Rate Limitu HTTP 403, chyby DNS či výpadku sítě)"
 }

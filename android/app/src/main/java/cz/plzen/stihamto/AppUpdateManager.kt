@@ -99,7 +99,7 @@ object AppUpdateManager {
             @Suppress("DEPRECATION")
             pInfo.versionCode
         }
-        val currentName = pInfo.versionName ?: "0.1.3"
+        val currentName = pInfo.versionName ?: "0.1.4"
 
         var latestFoundCode = currentCode
         var latestFoundName = currentName
@@ -108,6 +108,7 @@ object AppUpdateManager {
         var hasNewer = false
         var anySourceSucceeded = false
         var lastError: Exception? = null
+        val httpStatusCodes = mutableListOf<Int>()
 
         fun applyCandidateVersion(
             candCode: Int,
@@ -147,7 +148,9 @@ object AppUpdateManager {
                 setRequestProperty("Cache-Control", "no-cache, no-store, max-age=0")
             }
 
-            if (conn.responseCode == 200) {
+            val code = conn.responseCode
+            httpStatusCodes.add(code)
+            if (code == 200) {
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 val metaObj = JSONObject(body)
                 val base64Content = metaObj.optString("content", "")
@@ -180,7 +183,9 @@ object AppUpdateManager {
                 setRequestProperty("Accept", "application/vnd.github.v3+json")
             }
 
-            if (conn.responseCode == 200) {
+            val code = conn.responseCode
+            httpStatusCodes.add(code)
+            if (code == 200) {
                 val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
                 val obj = JSONObject(jsonStr)
                 val rawTag = obj.optString("tag_name", "").trim()
@@ -226,7 +231,9 @@ object AppUpdateManager {
                 setRequestProperty("Accept", "application/vnd.github.v3+json")
             }
 
-            if (conn.responseCode == 200) {
+            val code = conn.responseCode
+            httpStatusCodes.add(code)
+            if (code == 200) {
                 val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
                 val arr = JSONArray(jsonStr)
                 if (arr.length() > 0) {
@@ -262,7 +269,9 @@ object AppUpdateManager {
                 setRequestProperty("Pragma", "no-cache")
             }
 
-            if (conn.responseCode == 200) {
+            val code = conn.responseCode
+            httpStatusCodes.add(code)
+            if (code == 200) {
                 val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
                 val obj = JSONObject(jsonStr)
                 anySourceSucceeded = true
@@ -279,11 +288,30 @@ object AppUpdateManager {
             android.util.Log.w("AppUpdateManager", "raw version.json dotaz selhal: ${e.message}")
         }
 
-        // Pokud žádný ze 4 zdrojů neodpověděl (např. výpadek internetu), vyhodíme chybu místo lživého "Máte nejnovější verzi"!
+        // Pokud žádný ze 4 zdrojů neodpověděl 200 OK, sestavíme přesnou diagnostickou zprávu,
+        // aby bylo na první pohled jasné, zda je problém v síti telefonu nebo v nastavení GitHubu.
         if (!anySourceSucceeded && !hasNewer) {
-            throw java.io.IOException(
-                "Nepodařilo se spojit s GitHubem (${lastError?.message ?: "zkontrolujte připojení"})."
-            )
+            val detailedReason = when {
+                httpStatusCodes.isNotEmpty() && httpStatusCodes.all { it == 404 } ->
+                    "GitHub vrátil HTTP 404 – repozitář $GITHUB_REPO je nastaven jako soukromý (Private) nebo neexistuje. V nastavení GitHubu (Settings → Change visibility) ho přepněte na Public."
+                httpStatusCodes.any { it == 403 || it == 429 } ->
+                    "GitHub dočasně omezil počet dotazů z této IP adresy (HTTP ${httpStatusCodes.first { it == 403 || it == 429 }} Rate Limit). Zkuste to za pár minut."
+                httpStatusCodes.any { it == 401 } ->
+                    "GitHub vyžaduje přihlášení (HTTP 401) – repozitář $GITHUB_REPO je soukromý."
+                httpStatusCodes.any { it in 500..599 } ->
+                    "Server GitHubu má momentálně výpadek (HTTP ${httpStatusCodes.first { it in 500..599 }})."
+                lastError is java.net.UnknownHostException ->
+                    "Telefon nedokáže přeložit adresu api.github.com (vypnutý internet nebo chyba DNS)."
+                lastError is java.net.SocketTimeoutException ->
+                    "Vypršel časový limit spojení s GitHubem (pomalé spojení nebo blokovaný port)."
+                lastError is javax.net.ssl.SSLException ->
+                    "Chyba zabezpečeného spojení SSL/TLS (${lastError?.message})."
+                httpStatusCodes.isNotEmpty() ->
+                    "GitHub vrátil stav HTTP ${httpStatusCodes.distinct().joinToString("/")}."
+                else ->
+                    "Nelze navázat spojení s GitHubem (${lastError?.javaClass?.simpleName ?: "zkontrolujte internet"}: ${lastError?.message ?: "bez odezvy"})."
+            }
+            throw java.io.IOException(detailedReason)
         }
 
         // Připojíme unikátní timestamp k URL samotného APK, aby CDN při stahování nevrátila starý zkešovaný APK soubor
@@ -357,7 +385,12 @@ object AppUpdateManager {
 
             if (status != HttpURLConnection.HTTP_OK) {
                 conn.disconnect()
-                throw IllegalStateException("Server vrátil chybu při stahování aktualizace: HTTP $status")
+                val msg = when (status) {
+                    404 -> "Stahování APK selhalo (HTTP 404) – soubor v repozitáři chybí nebo je repozitář soukromý (Private)."
+                    403, 429 -> "GitHub omezil stahování (HTTP $status Rate Limit). Zkuste to za chvíli."
+                    else -> "Server vrátil chybu při stahování aktualizace: HTTP $status"
+                }
+                throw IllegalStateException(msg)
             }
 
             finalConnection = conn

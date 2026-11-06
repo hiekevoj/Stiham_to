@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -63,6 +64,7 @@ class MainActivity : AppCompatActivity() {
         )
     )
     private val hasMissingPermissionsState = mutableStateOf(false)
+    private val isLocationServicesEnabledState = mutableStateOf(true)
     private val selectedTractionState = mutableStateOf("all")
     private val isMultiStopState = mutableStateOf(true)
     private val pinnedCisState = mutableStateOf<Int?>(null)
@@ -85,7 +87,13 @@ class MainActivity : AppCompatActivity() {
     private val wakeUpStepsState = mutableStateOf(30)
     private val postRideCooldownState = mutableStateOf(10)
     private val systemDiagState = mutableStateOf(
-        SystemDiagState(hasLoc = true, hasActivity = true, hasNotif = true, ignoringBatteryOpt = true)
+        SystemDiagState(
+            hasLoc = true,
+            hasActivity = true,
+            hasNotif = true,
+            ignoringBatteryOpt = true,
+            isLocationEnabled = true
+        )
     )
 
     private val updateReceiver = object : BroadcastReceiver() {
@@ -101,6 +109,22 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (t: Throwable) {
                 android.util.Log.e("MainActivity", "Chyba v updateReceiver: ${t.message}", t)
+            }
+        }
+    }
+
+    private val locationProviderReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            try {
+                val wasEnabled = isLocationServicesEnabledState.value
+                refreshAllState()
+                val nowEnabled = isLocationServicesEnabledState.value
+                if (!wasEnabled && nowEnabled) {
+                    fetchWithCurrentGps()
+                    triggerRefresh()
+                }
+            } catch (t: Throwable) {
+                android.util.Log.e("MainActivity", "Chyba v locationProviderReceiver: ${t.message}", t)
             }
         }
     }
@@ -217,10 +241,15 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         PmdpRepository.syncRuntimeSettings(this)
         val filter = IntentFilter(LiveDeparturesService.BROADCAST_LIVE_UPDATE)
+        val locFilter = IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION).apply {
+            addAction(LocationManager.MODE_CHANGED_ACTION)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(updateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(locationProviderReceiver, locFilter, Context.RECEIVER_EXPORTED)
         } else {
             registerReceiver(updateReceiver, filter)
+            registerReceiver(locationProviderReceiver, locFilter)
         }
         refreshAllState()
     }
@@ -229,6 +258,10 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         try {
             unregisterReceiver(updateReceiver)
+        } catch (_: Exception) {
+        }
+        try {
+            unregisterReceiver(locationProviderReceiver)
         } catch (_: Exception) {
         }
     }
@@ -307,6 +340,7 @@ class MainActivity : AppCompatActivity() {
                         result = liveResultState.value,
                         heroState = heroState.value,
                         hasMissingPermissions = hasMissingPermissionsState.value,
+                        isLocationServicesEnabled = isLocationServicesEnabledState.value,
                         selectedTraction = selectedTractionState.value,
                         isMultiStop = isMultiStopState.value,
                         pinnedCis = pinnedCisState.value,
@@ -314,13 +348,23 @@ class MainActivity : AppCompatActivity() {
                         searchResults = searchResultsState.value,
                         errorMessage = errorMessageState.value,
                         onGpsClick = {
-                            PmdpRepository.setPinnedStopCis(this@MainActivity, null)
-                            pinnedCisState.value = null
-                            searchQueryState.value = ""
-                            searchResultsState.value = emptyList()
-                            fetchWithCurrentGps()
+                            if (!LocationHealth.isLocationServicesEnabled(this@MainActivity)) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Poloha (GPS) je v telefonu vypnutá – zapněte ji prosím",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                openLocationSettings()
+                            } else {
+                                PmdpRepository.setPinnedStopCis(this@MainActivity, null)
+                                pinnedCisState.value = null
+                                searchQueryState.value = ""
+                                searchResultsState.value = emptyList()
+                                fetchWithCurrentGps()
+                            }
                         },
                         onRequestPermissions = { requestNeededPermissions() },
+                        onOpenLocationSettings = { openLocationSettings() },
                         onHeroToggle = { handleHeroToggle() },
                         onHeroStop = { handleHeroStop() },
                         onSelectTraction = { traction ->
@@ -365,7 +409,7 @@ class MainActivity : AppCompatActivity() {
                     val vName = try {
                         packageManager.getPackageInfo(packageName, 0).versionName
                     } catch (_: Exception) {
-                        "0.1.2"
+                        "0.1.3"
                     }
 
                     SettingsScreen(
@@ -465,6 +509,7 @@ class MainActivity : AppCompatActivity() {
                         },
                         diagState = systemDiagState.value,
                         onRequestPermissions = { requestNeededPermissions() },
+                        onOpenLocationSettings = { openLocationSettings() },
                         onOpenBatterySettings = { openBatterySettings() },
                         updateState = updateUiState.value,
                         onCheckForUpdates = { checkForAppUpdate() },
@@ -516,6 +561,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshAllState() {
+        isLocationServicesEnabledState.value = LocationHealth.isLocationServicesEnabled(this)
         heroState.value = getHeroState()
         hasMissingPermissionsState.value = checkMissingPermissions()
         selectedTractionState.value = PmdpRepository.getPreferredTraction(this)
@@ -541,6 +587,7 @@ class MainActivity : AppCompatActivity() {
         val ssid = SmartTriggerMonitor.getConnectedWifiSsid(this)
         val onHomeWifi = SmartTriggerMonitor.isConnectedToHomeWifi(this)
         val onWifi = SmartTriggerMonitor.isConnectedToWifi(this)
+        val gpsOn = LocationHealth.isLocationServicesEnabled(this)
         val netText = when {
             onHomeWifi -> "Klidová Wi-Fi${if (!ssid.isNullOrEmpty()) " ($ssid)" else ""}"
             onWifi -> "Veřejná Wi-Fi${if (!ssid.isNullOrEmpty()) " ($ssid)" else ""}"
@@ -548,11 +595,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         return if (LiveDeparturesService.isRunning && !LiveDeparturesService.isSleepingStandby) {
+            val subText = if (!gpsOn && PmdpRepository.getPinnedStopCis(this) == null) {
+                "⚠ Poloha (GPS) je v telefonu vypnutá – zapněte ji, aby aplikace poznala vaši nejbližší zastávku."
+            } else {
+                "Živé odjezdy jsou v notifikaci ($netText). Uspí se po 3 min na místě."
+            }
             HeroState(
                 isRunning = true,
                 isSleeping = false,
                 title = "Živé sledování běží",
-                subtitle = "Živé odjezdy jsou v notifikaci ($netText). Uspí se po 3 min na místě.",
+                subtitle = subText,
                 actionText = "Uspat do klidu"
             )
         } else if (LiveDeparturesService.isRunning && LiveDeparturesService.isSleepingStandby) {
@@ -661,7 +713,15 @@ class MainActivity : AppCompatActivity() {
             pm?.isIgnoringBatteryOptimizations(packageName) == true
         } else true
 
-        return SystemDiagState(hasLoc && hasBgLoc, hasActivity, hasNotif, ignoringBatteryOpt)
+        val isLocationEnabled = LocationHealth.isLocationServicesEnabled(this)
+
+        return SystemDiagState(
+            hasLoc = hasLoc && hasBgLoc,
+            hasActivity = hasActivity,
+            hasNotif = hasNotif,
+            ignoringBatteryOpt = ignoringBatteryOpt,
+            isLocationEnabled = isLocationEnabled
+        )
     }
 
     private fun handleHeroToggle() {
@@ -833,6 +893,14 @@ class MainActivity : AppCompatActivity() {
             perms.add(Manifest.permission.POST_NOTIFICATIONS)
         }
         permissionLauncher.launch(perms.toTypedArray())
+    }
+
+    private fun openLocationSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        } catch (_: Throwable) {
+            Toast.makeText(this, "Zapněte prosím Polohu (GPS) v rychlém nastavení telefonu", Toast.LENGTH_LONG).show()
+        }
     }
 
     @SuppressLint("BatteryLife")

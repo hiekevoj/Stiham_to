@@ -16,6 +16,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
+import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
@@ -239,8 +240,10 @@ class LiveDeparturesService : Service(), SensorEventListener {
     private var wakeLock: PowerManager.WakeLock? = null
 
     // Okamžitý přepočet notifikace na zamykací obrazovce při rozsvícení displeje (eliminuje zamrznutí v Doze)
+    // a reakce na zapnutí / vypnutí polohy (GPS) v rychlém nastavení telefonu
     private var screenStateReceiverRegistered = false
     private val screenStateReceiver = object : BroadcastReceiver() {
+        @SuppressLint("MissingPermission")
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action ?: return
             if (action == Intent.ACTION_SCREEN_ON || action == Intent.ACTION_USER_PRESENT) {
@@ -249,6 +252,29 @@ class LiveDeparturesService : Service(), SensorEventListener {
                     val cached = latestResult
                     if (cached == null || (System.currentTimeMillis() - cached.fetchedEpochMs) > 35_000L) {
                         triggerImmediateRefresh()
+                    }
+                }
+            } else if (action == LocationManager.PROVIDERS_CHANGED_ACTION || action == LocationManager.MODE_CHANGED_ACTION) {
+                val gpsEnabled = LocationHealth.isLocationServicesEnabled(this@LiveDeparturesService)
+                sendBroadcast(Intent(BROADCAST_LIVE_UPDATE).setPackage(packageName))
+                if (!isSleepingStandby && isRunning) {
+                    if (gpsEnabled) {
+                        try {
+                            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                                .addOnSuccessListener { loc ->
+                                    if (loc != null && !isSleepingStandby) {
+                                        lastLat = loc.latitude
+                                        lastLon = loc.longitude
+                                        anchorLat = loc.latitude
+                                        anchorLon = loc.longitude
+                                        PmdpRepository.saveLastKnownLocation(this@LiveDeparturesService, loc.latitude, loc.longitude)
+                                        triggerImmediateRefresh()
+                                    }
+                                }
+                        } catch (_: Throwable) {
+                        }
+                    } else {
+                        applyLocalCountdownTick(forceNotify = true)
                     }
                 }
             }
@@ -318,9 +344,11 @@ class LiveDeparturesService : Service(), SensorEventListener {
             val filter = IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
+                addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
+                addAction(LocationManager.MODE_CHANGED_ACTION)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(screenStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                registerReceiver(screenStateReceiver, filter, Context.RECEIVER_EXPORTED)
             } else {
                 registerReceiver(screenStateReceiver, filter)
             }
@@ -1480,8 +1508,13 @@ class LiveDeparturesService : Service(), SensorEventListener {
             res.primaryStop.stop.name
         }
 
+        val gpsEnabled = LocationHealth.isLocationServicesEnabled(this)
+        val hasPinnedStop = PmdpRepository.getPinnedStopCis(this) != null
+
         val nearestDist = res.primaryStop.distanceMeters
-        val subStatus = if (nearestDist > 18_000) {
+        val subStatus = if (!gpsEnabled && !hasPinnedStop) {
+            "GPS vypnuta"
+        } else if (nearestDist > 18_000) {
             "Mimo dosah spojů"
         } else if (nearestDist <= 40) {
             "U zastávky"
@@ -1502,7 +1535,9 @@ class LiveDeparturesService : Service(), SensorEventListener {
         val firstCatchable = catchableDeps.firstOrNull()
             ?: validDeps.firstOrNull()
 
-        val shortSummary = if (firstCatchable != null) {
+        val shortSummary = if (!gpsEnabled && !hasPinnedStop) {
+            "⚠ Poloha (GPS) v telefonu je vypnutá – zapněte ji"
+        } else if (firstCatchable != null) {
             val inText = when {
                 firstCatchable.leavingInMin < 0 -> "odjelo"
                 firstCatchable.leavingInMin == 0 -> "teď"
@@ -1514,7 +1549,7 @@ class LiveDeparturesService : Service(), SensorEventListener {
             "Žádné odjezdy v nejbližší době"
         }
 
-        val lines = if (topDeps.isEmpty()) {
+        val baseLines = if (topDeps.isEmpty()) {
             listOf("Žádné spoje pro zvolený filtr.")
         } else {
             topDeps.map { d ->
@@ -1527,6 +1562,12 @@ class LiveDeparturesService : Service(), SensorEventListener {
                 val originPart = if (isMulti && d.stopCis != res.primaryStop.stop.cisNumber) " · ${d.stopName}" else ""
                 "${d.lineName} → ${d.destination}  ·  $inText$delayNote (${d.catchability.label})$originPart"
             }
+        }
+
+        val lines = if (!gpsEnabled && !hasPinnedStop) {
+            listOf("⚠ Poloha (GPS) je vypnutá – zobrazuji poslední známé místo:") + baseLines
+        } else {
+            baseLines
         }
 
         return buildNotification(

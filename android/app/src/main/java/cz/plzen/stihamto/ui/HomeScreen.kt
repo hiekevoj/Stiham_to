@@ -53,6 +53,7 @@ fun HomeScreen(
     result: LiveDeparturesResult?,
     heroState: HeroState,
     hasMissingPermissions: Boolean,
+    isLocationServicesEnabled: Boolean = true,
     selectedTraction: String,
     isMultiStop: Boolean,
     pinnedCis: Int?,
@@ -61,6 +62,7 @@ fun HomeScreen(
     errorMessage: String?,
     onGpsClick: () -> Unit,
     onRequestPermissions: () -> Unit,
+    onOpenLocationSettings: () -> Unit = {},
     onHeroToggle: () -> Unit,
     onHeroStop: () -> Unit,
     onSelectTraction: (String) -> Unit,
@@ -117,6 +119,13 @@ fun HomeScreen(
                 }
             }
 
+            // 2b. Vypnutá systémová poloha (GPS) v telefonu
+            if (!isLocationServicesEnabled) {
+                item {
+                    LocationDisabledWarningCard(onOpenLocationSettings = onOpenLocationSettings)
+                }
+            }
+
             // 3. Hero karta stavu pozadí
             item {
                 HeroCard(
@@ -161,7 +170,12 @@ fun HomeScreen(
 
             // 7. Hlavička aktuální vybrané zastávky / uzlu
             item {
-                StopHeader(result = result, pinnedCis = pinnedCis, errorMessage = errorMessage)
+                StopHeader(
+                    result = result,
+                    pinnedCis = pinnedCis,
+                    isLocationServicesEnabled = isLocationServicesEnabled,
+                    errorMessage = errorMessage
+                )
             }
 
             // 8. Seznam odjezdů nebo chybový stav
@@ -370,6 +384,47 @@ private fun PermissionWarningCard(onRequestPermissions: () -> Unit) {
                     text = "Klepnutím povolte polohu, krokoměr a notifikace",
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
                     fontSize = 11.5.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocationDisabledWarningCard(onOpenLocationSettings: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable { onOpenLocationSettings() },
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_gps),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Poloha (GPS) je v telefonu vypnutá",
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Bez zapnuté GPS nelze určit nejbližší zastávku (zobrazuje se poslední nebo výchozí místo). Klepnutím polohu zapnete.",
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.88f),
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp
                 )
             }
         }
@@ -711,7 +766,12 @@ private fun NearbyStopsRow(
 }
 
 @Composable
-private fun StopHeader(result: LiveDeparturesResult?, pinnedCis: Int?, errorMessage: String?) {
+private fun StopHeader(
+    result: LiveDeparturesResult?,
+    pinnedCis: Int?,
+    isLocationServicesEnabled: Boolean,
+    errorMessage: String?
+) {
     Column(modifier = Modifier.padding(top = 4.dp)) {
         if (result != null) {
             val isFarAway = result.primaryStop.distanceMeters > 18_000 && pinnedCis == null
@@ -723,6 +783,8 @@ private fun StopHeader(result: LiveDeparturesResult?, pinnedCis: Int?, errorMess
 
             val meta = if (isFarAway) {
                 "Mimo pokrytí zastávek (nejbližší: ${result.primaryStop.stop.name}, ${result.primaryStop.distanceMeters / 1000} km)"
+            } else if (!isLocationServicesEnabled && pinnedCis == null) {
+                "⚠ Poloha (GPS) je vypnutá – zobrazuji poslední známé nebo výchozí místo (${result.fetchedAtHHMMSS.substringBeforeLast(":")})"
             } else {
                 val stopsMeta = result.clusterStops.joinToString("  ·  ") {
                     "${it.stop.name}: ${it.distanceMeters} m (${it.walkingMinutes} min chůze)"
@@ -741,7 +803,10 @@ private fun StopHeader(result: LiveDeparturesResult?, pinnedCis: Int?, errorMess
             Text(
                 text = meta,
                 fontSize = 12.5.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (!isLocationServicesEnabled && pinnedCis == null)
+                    MaterialTheme.colorScheme.error
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else if (errorMessage == null) {
             Text(
